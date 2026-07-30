@@ -335,14 +335,62 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         # ── Phase 4: Generative UI 引擎 ──
         logger.info("Generative UI ready", components=len(schema_mapper.list_components()))
 
+        # ── Phase 5: 多智能体编排 ──
+        from plugins.multi_agent.orchestrator import Orchestrator
+        from plugins.multi_agent.communication import MessageBus, Blackboard
+        from plugins.checkpoint.checkpoint_store import CheckpointStore, RecoveryManager
+        from plugins.hitl.hitl_manager import HITLManager
+
+        orchestrator = Orchestrator(agent_engine=engine, max_workers=5)
+        message_bus = MessageBus()
+        blackboard = Blackboard()
+        checkpoint_store = CheckpointStore(config)
+        recovery_manager = RecoveryManager(checkpoint_store, blackboard)
+        hitl_manager = HITLManager(config)
+
+        app.state.orchestrator = orchestrator
+        app.state.message_bus = message_bus
+        app.state.blackboard = blackboard
+        app.state.checkpoint_store = checkpoint_store
+        app.state.recovery_manager = recovery_manager
+        app.state.hitl_manager = hitl_manager
+
+        # 注册代理通信工具
+        async def _agent_send_message(receiver: str, content: str) -> str:
+            from plugins.multi_agent.communication import AgentMessage, MessageType
+            msg = AgentMessage(sender_id="main", receiver_id=receiver,
+                                type=MessageType.INFORM, content={"text": content})
+            await message_bus.send(msg)
+            return json.dumps({"sent": True, "receiver": receiver})
+        async def _blackboard_write(key: str, value: str) -> str:
+            blackboard.write(key, value)
+            return json.dumps({"written": True, "key": key})
+        async def _blackboard_read(key: str) -> str:
+            val = blackboard.read(key)
+            return json.dumps({"key": key, "value": val})
+        async def _save_checkpoint(task_id: str, stage: str, state: str = "") -> str:
+            from plugins.checkpoint.checkpoint_store import Checkpoint
+            cp = Checkpoint(task_id=task_id, stage=stage,
+                            state={"content": state} if state else {})
+            await checkpoint_store.save(cp)
+            return json.dumps({"saved": True, "checkpoint_id": cp.id})
+        tool_dispatcher.register("agent_send_message", _agent_send_message)
+        tool_dispatcher.register("blackboard_write", _blackboard_write)
+        tool_dispatcher.register("blackboard_read", _blackboard_read)
+        tool_dispatcher.register("save_checkpoint", _save_checkpoint)
+
+        logger.info("Multi-agent orchestration ready",
+                     max_workers=5, modes="parallel+chain+hierarchical")
+        logger.info("Checkpoint + HITL ready")
+
         logger.info("All systems ready.",
                      phase1="security+sandbox+lock+degradation+workers",
                      phase2="mcp+github+session_store+long_term_memory",
                      phase3="rag+context_tree+macro_tools",
                      phase4="tool_market+builtin_tools+generative_ui",
+                     phase5="orchestrator+blackboard+checkpoint+hitl",
                      mcp_tools=len(mcp_tools),
-                     builtin_tools=len(tool_registry.list_installed()),
-                     genui_components=len(schema_mapper.list_components()))
+                     builtin_tools=len(tool_registry.list_installed()))
 
         yield  # App runs here
 
@@ -374,11 +422,13 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     from plugins.web_ui.api.rag import router as rag_router
     from plugins.web_ui.api.tools import router as tools_router
     from plugins.web_ui.api.genui import router as genui_router
+    from plugins.web_ui.api.agents import router as agents_router
     app.include_router(chat_router)
     app.include_router(mcp_router)
     app.include_router(rag_router)
     app.include_router(tools_router)
     app.include_router(genui_router)
+    app.include_router(agents_router)
 
     # ── Health check ──
 
