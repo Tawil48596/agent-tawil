@@ -253,12 +253,96 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         app.state.macro_registry = macro_registry
         logger.info("Macro tools ready")
 
+        # ── Phase 4: 工具市场 ──
+        from plugins.tool_market.registry import ToolRegistry, ToolDef
+        from plugins.tool_market.marketplace import Marketplace, MarketplaceEntry
+        from plugins.generative_ui.schema_mapper import SchemaMapper
+
+        tool_registry = ToolRegistry()
+        marketplace = Marketplace(tool_registry)
+        schema_mapper = SchemaMapper()
+
+        app.state.tool_registry = tool_registry
+        app.state.marketplace = marketplace
+        app.state.schema_mapper = schema_mapper
+
+        # 注册内置工具
+        from plugins.tool_market.builtin.web_search import web_search, web_extract
+        from plugins.tool_market.builtin.file_ops import file_read, file_write, file_list, file_search
+        from plugins.tool_market.builtin.browser import browser_navigate, browser_screenshot
+
+        tool_registry.register(ToolDef(
+            name="web_search", description="搜索网络", toolset="builtin",
+            parameters={"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "default": 5}}, "required": ["query"]},
+            handler=web_search, tags=["search", "web"], genui_component="SearchResultList",
+        ))
+        tool_registry.register(ToolDef(
+            name="web_extract", description="提取网页内容", toolset="builtin",
+            parameters={"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
+            handler=web_extract, tags=["web", "extract"], genui_component="ArticleViewer",
+        ))
+        tool_registry.register(ToolDef(
+            name="file_read", description="读取文件", toolset="builtin",
+            parameters={"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+            handler=file_read, tags=["file"], genui_component="CodeViewer",
+        ))
+        tool_registry.register(ToolDef(
+            name="file_write", description="写入文件", toolset="builtin",
+            parameters={"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]},
+            handler=file_write, is_dangerous=True, tags=["file"], genui_component="ConfirmationCard",
+        ))
+        tool_registry.register(ToolDef(
+            name="file_list", description="列出文件", toolset="builtin",
+            parameters={"type": "object", "properties": {"path": {"type": "string", "default": "."}, "recursive": {"type": "boolean", "default": False}}, "required": []},
+            handler=file_list, tags=["file"], genui_component="FileTree",
+        ))
+        tool_registry.register(ToolDef(
+            name="file_search", description="搜索文件内容", toolset="builtin",
+            parameters={"type": "object", "properties": {"path": {"type": "string"}, "query": {"type": "string"}}, "required": ["path", "query"]},
+            handler=file_search, tags=["file", "search"], genui_component="SearchResultList",
+        ))
+        tool_registry.register(ToolDef(
+            name="browser_navigate", description="浏览器导航", toolset="builtin",
+            parameters={"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
+            handler=browser_navigate, tags=["browser"], genui_component="ArticleViewer",
+            requires_packages=["playwright"],
+        ))
+        tool_registry.register(ToolDef(
+            name="browser_screenshot", description="浏览器截图", toolset="builtin",
+            parameters={"type": "object", "properties": {"url": {"type": "string"}, "selector": {"type": "string", "default": "body"}}, "required": ["url"]},
+            handler=browser_screenshot, tags=["browser"], genui_component="StatCard",
+            requires_packages=["playwright"],
+        ))
+
+        # 种子市场数据
+        marketplace.publish(MarketplaceEntry(
+            name="web_search", description="DuckDuckGo 搜索", version="0.1.0",
+            author="builtin", tags=["search", "builtin"], downloads=1000,
+        ))
+        marketplace.publish(MarketplaceEntry(
+            name="file_read", description="文件读取", version="0.1.0",
+            author="builtin", tags=["file", "builtin"], downloads=800,
+        ))
+
+        # 同步 tool_dispatcher
+        for tool in tool_registry.list_installed():
+            if tool.handler:
+                tool_dispatcher.register(tool.name, tool.handler)
+
+        logger.info("Tool market ready", builtin=len(tool_registry.list_installed()),
+                     market=marketplace.get_stats()["market_size"])
+
+        # ── Phase 4: Generative UI 引擎 ──
+        logger.info("Generative UI ready", components=len(schema_mapper.list_components()))
+
         logger.info("All systems ready.",
                      phase1="security+sandbox+lock+degradation+workers",
-                     phase2="mcp_gateway+github+session_store+long_term_memory",
-                     phase3="rag_engine+context_tree+macro_tools",
+                     phase2="mcp+github+session_store+long_term_memory",
+                     phase3="rag+context_tree+macro_tools",
+                     phase4="tool_market+builtin_tools+generative_ui",
                      mcp_tools=len(mcp_tools),
-                     github_available=github_adapter.is_configured)
+                     builtin_tools=len(tool_registry.list_installed()),
+                     genui_components=len(schema_mapper.list_components()))
 
         yield  # App runs here
 
@@ -288,9 +372,13 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     from plugins.web_ui.api.chat import router as chat_router
     from plugins.web_ui.api.mcp import router as mcp_router
     from plugins.web_ui.api.rag import router as rag_router
+    from plugins.web_ui.api.tools import router as tools_router
+    from plugins.web_ui.api.genui import router as genui_router
     app.include_router(chat_router)
     app.include_router(mcp_router)
     app.include_router(rag_router)
+    app.include_router(tools_router)
+    app.include_router(genui_router)
 
     # ── Health check ──
 
