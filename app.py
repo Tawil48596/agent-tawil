@@ -11,6 +11,7 @@ AI Agent Platform — 应用入口
   6. 启动 FastAPI 服务
 """
 
+import json
 import os
 import signal
 import sys
@@ -224,9 +225,38 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         app.state.memory_consolidator = consolidator
         logger.info("Long-term memory ready", backend=long_term._backend)
 
+        # ── Phase 3: RAG 引擎 ──
+        from plugins.rag_engine.engine import RAGEngine
+        rag_engine = RAGEngine(config)
+        app.state.rag_engine = rag_engine
+
+        # 注册工具: expand_history_node (Agent 主动解压缩上下文)
+        async def _expand_history_node(node_id: str, depth: int = 1) -> str:
+            return json.dumps({"node_id": node_id, "depth": depth, "action": "expanded"})
+        tool_dispatcher.register("expand_history_node", _expand_history_node)
+
+        logger.info("RAG engine ready")
+
+        # ── Phase 3: 分层上下文树 ──
+        from plugins.context_tree.tree_builder import ContextTree
+        context_tree = ContextTree(max_total_tokens=128000)
+        context_tree.set_environment(
+            "你是一个强大的 AI Agent。使用工具完成任务，保持回答准确。\n"
+            "对危险操作必须先获得审批。"
+        )
+        app.state.context_tree = context_tree
+        logger.info("Context tree ready")
+
+        # ── Phase 3: 宏工具 ──
+        from plugins.macro_tools.macro_registry import MacroRegistry
+        macro_registry = MacroRegistry()
+        app.state.macro_registry = macro_registry
+        logger.info("Macro tools ready")
+
         logger.info("All systems ready.",
-                     phase1="L1+L2+L3+sandbox+lock+degradation+workers",
+                     phase1="security+sandbox+lock+degradation+workers",
                      phase2="mcp_gateway+github+session_store+long_term_memory",
+                     phase3="rag_engine+context_tree+macro_tools",
                      mcp_tools=len(mcp_tools),
                      github_available=github_adapter.is_configured)
 
@@ -257,8 +287,10 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     # ── Register API routers ──
     from plugins.web_ui.api.chat import router as chat_router
     from plugins.web_ui.api.mcp import router as mcp_router
+    from plugins.web_ui.api.rag import router as rag_router
     app.include_router(chat_router)
     app.include_router(mcp_router)
+    app.include_router(rag_router)
 
     # ── Health check ──
 
