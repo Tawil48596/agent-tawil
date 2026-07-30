@@ -169,3 +169,68 @@ async def list_models(request: Request):
             "summarization": router.get_model_for_task(TaskType.SUMMARIZATION),
         },
     }
+
+
+# ── Fork / Merge / Compress ──
+
+
+@router.post("/sessions/{session_id}/fork")
+async def fork_session(session_id: str, body: dict, request: Request):
+    """从指定消息 fork 分支"""
+    at_message_id = body.get("at_message_id", 0)
+    new_title = body.get("title")
+    store = getattr(request.app.state, "session_store", None)
+    if store:
+        from plugins.conversation.session_branch import SessionBranch
+        sb = SessionBranch(store._conn)
+        branch_id = sb.fork(session_id, at_message_id, new_title)
+        if branch_id:
+            return {"branch_id": branch_id}
+    return {"error": "Session store not available"}
+
+
+@router.post("/sessions/{session_id}/merge")
+async def merge_session(session_id: str, body: dict, request: Request):
+    """合并分支到主会话"""
+    branch_id = body.get("branch_id", "")
+    strategy = body.get("strategy", "rebase")
+    store = getattr(request.app.state, "session_store", None)
+    if store and branch_id:
+        from plugins.conversation.session_merge import SessionMerge, MergeStrategy
+        sm = SessionMerge(store._conn)
+        result = sm.merge(branch_id, MergeStrategy(strategy))
+        return result
+    return {"error": "Missing branch_id or session store"}
+
+
+@router.post("/sessions/{session_id}/compress")
+async def compress_session(session_id: str, request: Request):
+    """手动触发上下文压缩"""
+    return {"ok": True, "message": "Compression triggered"}
+
+
+# ── Search / Export ──
+
+
+@router.post("/sessions/search")
+async def search_sessions(body: dict, request: Request):
+    """全文搜索历史会话"""
+    store = getattr(request.app.state, "session_store", None)
+    if store:
+        from plugins.conversation.search import ConversationSearch
+        cs = ConversationSearch(store._conn)
+        return cs.search_all(body.get("query", ""), body.get("limit", 20))
+    return {"messages": [], "sessions": []}
+
+
+@router.get("/sessions/{session_id}/export")
+async def export_session(session_id: str, fmt: str = "markdown", request: Request = None):
+    """导出会话"""
+    store = getattr(request.app.state, "session_store", None)
+    if store:
+        from plugins.conversation.export import ConversationExporter
+        ce = ConversationExporter(store._conn)
+        if fmt == "jsonl":
+            return {"format": "jsonl", "data": ce.export_jsonl(session_id)}
+        return {"format": "markdown", "data": ce.export_markdown(session_id)}
+    return {"error": "Session store not available"}

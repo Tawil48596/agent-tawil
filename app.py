@@ -469,6 +469,9 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     from plugins.web_ui.api.agents import router as agents_router
     from plugins.web_ui.api.auth import router as auth_router
     from plugins.web_ui.api.evals import router as evals_router
+    from plugins.web_ui.api.memory import router as memory_router
+    from plugins.web_ui.api.analytics import router as analytics_api_router
+    from plugins.web_ui.api.github import router as github_api_router
     app.include_router(chat_router)
     app.include_router(mcp_router)
     app.include_router(rag_router)
@@ -477,6 +480,9 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     app.include_router(agents_router)
     app.include_router(auth_router)
     app.include_router(evals_router)
+    app.include_router(memory_router)
+    app.include_router(analytics_api_router)
+    app.include_router(github_api_router)
 
     # ── Health check ──
 
