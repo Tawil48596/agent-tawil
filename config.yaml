@@ -1,0 +1,104 @@
+# AI Agent Platform — Default Configuration
+# All values can be overridden via environment variables.
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins:
+    - "http://localhost:5173"
+    - "http://localhost:3000"
+
+auth:
+  enabled: false
+  jwt_secret: "${JWT_SECRET}"
+  api_key_header: "Authorization"
+  token_expire_hours: 720
+
+database:
+  url: "sqlite:///data/agent.db"
+  pool_size: 5
+  echo: false
+
+redis:
+  url: "redis://localhost:6379/0"
+  ttl_seconds: 3600
+
+vector_store:
+  backend: "chromadb"
+  chromadb:
+    path: "./chroma_data"
+  milvus:
+    host: "localhost"
+    port: 19530
+
+llm:
+  default_model: "gpt-4o"
+  fast_model: "gpt-4o-mini"
+  embedding_model: "text-embedding-3-small"
+  providers:
+    openai:
+      api_key: "${OPENAI_API_KEY}"
+      base_url: "https://api.openai.com/v1"
+    anthropic:
+      api_key: "${ANTHROPIC_API_KEY}"
+    deepseek:
+      api_key: "${DEEPSEEK_API_KEY}"
+      base_url: "https://api.deepseek.com/v1"
+  fallback_chain:
+    - openai
+    - anthropic
+    - deepseek
+
+agent:
+  max_turns: 50
+  context_compression_threshold: 0.75  # 75% window usage
+  model_routing:
+    reasoning: "gpt-4o"
+    coding: "claude-sonnet-4"
+    summarization: "gpt-4o-mini"
+    embedding: "text-embedding-3-small"
+
+memory:
+  short_term_window: 50  # messages
+  long_term_backend: "builtin"
+  consolidation_trigger: "session_end"
+  importance_threshold: 0.3
+  decay_lambda: 0.01
+  max_retrieved: 10
+
+rag:
+  default_chunk_size: 512
+  default_chunk_overlap: 0.1
+  retrieval_top_k: 10
+  rerank_top_k: 5
+  hybrid_alpha: 0.7  # embedding weight (1-alpha = BM25 weight)
+
+tool_market:
+  sandbox_mode: "subprocess"
+  approval_required_for:
+    - "terminal"
+    - "code_exec"
+    - "github_execute_action"
+    - "browser"
+
+mcp:
+  discovery_interval: 60
+  tool_call_timeout: 30
+
+multi_agent:
+  default_timeout: 300
+  max_sub_agents: 10
+  retry_attempts: 2
+  retry_backoff: "exponential"
+
+analytics:
+  enabled: true
+  retention_days: 90
+  budget_alerts:
+    daily: 50.0      # USD
+    monthly: 500.0   # USD
+
+logging:
+  level: "INFO"
+  format: "json"
+  file: "logs/app.log"
