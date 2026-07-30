@@ -1,0 +1,38 @@
+name: reasoning
+description: 推理能力评测 — 验证 Agent 基本理解和推理能力
+
+cases:
+  - id: reasoning_001
+    difficulty: easy
+    input: "1+1等于多少？"
+    expected:
+      keywords: ["2", "两"]
+      tools: []
+
+  - id: reasoning_002
+    difficulty: easy
+    input: "Python 是什么？"
+    expected:
+      keywords: ["编程语言", "语言"]
+      tools: []
+
+  - id: reasoning_003
+    difficulty: medium
+    input: "比较一下 Python 和 JavaScript 的区别"
+    expected:
+      keywords: ["Python", "JavaScript", "动态"]
+      tools: []
+
+  - id: reasoning_004
+    difficulty: medium
+    input: "解释一下什么是 REST API"
+    expected:
+      keywords: ["API", "HTTP", "REST"]
+      tools: []
+
+  - id: reasoning_005
+    difficulty: hard
+    input: "如果我要构建一个高并发系统，应该考虑哪些架构因素？"
+    expected:
+      keywords: ["负载均衡", "缓存", "数据库", "异步"]
+      tools: []

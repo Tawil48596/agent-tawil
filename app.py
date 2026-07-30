@@ -383,12 +383,33 @@ def create_app(config: dict[str, Any]) -> FastAPI:
                      max_workers=5, modes="parallel+chain+hierarchical")
         logger.info("Checkpoint + HITL ready")
 
+        # ── Phase 6+7: 评测 + Trace + 消息平台 ──
+        from plugins.evals.runner import EvalRunner
+        from plugins.evals.trace_viewer import TraceCollector
+        from plugins.messaging.platforms.telegram import TelegramAdapter
+
+        eval_runner = EvalRunner()
+        trace_collector = TraceCollector()
+        telegram_bot = TelegramAdapter()
+
+        app.state.eval_runner = eval_runner
+        app.state.trace_collector = trace_collector
+        app.state.telegram_bot = telegram_bot
+
+        if telegram_bot.is_configured:
+            await telegram_bot.start()
+
+        logger.info("Evals + Trace + Messaging ready",
+                     suites=len(eval_runner.list_suites()),
+                     telegram=telegram_bot.is_configured)
+
         logger.info("All systems ready.",
                      phase1="security+sandbox+lock+degradation+workers",
                      phase2="mcp+github+session_store+long_term_memory",
                      phase3="rag+context_tree+macro_tools",
                      phase4="tool_market+builtin_tools+generative_ui",
                      phase5="orchestrator+blackboard+checkpoint+hitl",
+                     phase6="evals+trace_viewer+auth+messaging",
                      mcp_tools=len(mcp_tools),
                      builtin_tools=len(tool_registry.list_installed()))
 
@@ -423,12 +444,16 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     from plugins.web_ui.api.tools import router as tools_router
     from plugins.web_ui.api.genui import router as genui_router
     from plugins.web_ui.api.agents import router as agents_router
+    from plugins.web_ui.api.auth import router as auth_router
+    from plugins.web_ui.api.evals import router as evals_router
     app.include_router(chat_router)
     app.include_router(mcp_router)
     app.include_router(rag_router)
     app.include_router(tools_router)
     app.include_router(genui_router)
     app.include_router(agents_router)
+    app.include_router(auth_router)
+    app.include_router(evals_router)
 
     # ── Health check ──
 

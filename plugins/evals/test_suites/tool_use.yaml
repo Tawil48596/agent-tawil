@@ -1,0 +1,24 @@
+name: tool_use
+description: 工具调用精准度评测
+
+cases:
+  - id: tool_001
+    difficulty: easy
+    input: "现在几点了？"
+    expected:
+      keywords: []
+      tools: ["get_current_time"]
+
+  - id: tool_002
+    difficulty: easy
+    input: "帮我搜索 GitHub 上的 Python Agent 框架"
+    expected:
+      keywords: ["GitHub", "Agent"]
+      tools: ["github_search_repos"]
+
+  - id: tool_003
+    difficulty: medium
+    input: "搜索网络上的最新 AI 新闻"
+    expected:
+      keywords: ["AI"]
+      tools: ["web_search"]
