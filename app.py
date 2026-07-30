@@ -178,18 +178,64 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         app.state.task_queue = task_queue
         logger.info("Task queue ready", workers=4)
 
+        # ── Phase 2: MCP 网关 + GitHub ──
+        from plugins.mcp_gateway.gateway import MCPGateway, MCPServerInfo
+        from plugins.mcp_gateway.adapters.github import GitHubMCPAdapter
+
+        mcp_gateway = MCPGateway(config)
+
+        # GitHub 适配器
+        github_token = config.get("llm", {}).get("providers", {}).get("github", {}).get("api_key", "")
+        if not github_token:
+            github_token = os.environ.get("GITHUB_TOKEN", "")
+        github_adapter = GitHubMCPAdapter(token=github_token)
+        if github_adapter.is_configured:
+            await mcp_gateway.register_server(
+                MCPServerInfo(id="github", name="GitHub", type="github", endpoint="builtin://github"),
+                adapter=github_adapter,
+            )
+            logger.info("MCP: GitHub adapter connected")
+        else:
+            logger.info("MCP: GitHub adapter registered (no token)")
+
+        # 自动发现其他适配器
+        await mcp_gateway.discover()
+        app.state.mcp_gateway = mcp_gateway
+        mcp_tools = mcp_gateway.list_all_tools()
+        logger.info("MCP gateway ready", servers=len(mcp_gateway.list_servers()),
+                     tools=len(mcp_tools))
+
+        # ── Phase 2: 对话持久化 ──
+        from plugins.conversation.session_store import SessionStore
+        db_url = config.get("database", {}).get("url", "sqlite:///data/agent.db")
+        db_path = db_url.replace("sqlite:///", "")
+        session_store = SessionStore(db_path)
+        session_store.connect()
+        app.state.session_store = session_store
+        logger.info("Session store ready", db=db_path)
+
+        # ── Phase 2: 长期记忆 ──
+        from plugins.memory.long_term import LongTermMemory
+        from plugins.memory.consolidation import MemoryConsolidator
+
+        long_term = LongTermMemory(config)
+        consolidator = MemoryConsolidator(long_term, router)
+        app.state.long_term_memory = long_term
+        app.state.memory_consolidator = consolidator
+        logger.info("Long-term memory ready", backend=long_term._backend)
+
         logger.info("All systems ready.",
-                     security="L1+L2+L3",
-                     sandbox=sandbox.mode,
-                     lock="redis" if redis_url else "optimistic",
-                     degradation="L1+L2+L3",
-                     workers=4)
+                     phase1="L1+L2+L3+sandbox+lock+degradation+workers",
+                     phase2="mcp_gateway+github+session_store+long_term_memory",
+                     mcp_tools=len(mcp_tools),
+                     github_available=github_adapter.is_configured)
 
         yield  # App runs here
 
         # ── Graceful shutdown ──
         logger.info("Shutting down...")
         await task_queue.stop()
+        session_store.close()
         logger.info("Goodbye.")
 
     app = FastAPI(
@@ -210,7 +256,9 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
     # ── Register API routers ──
     from plugins.web_ui.api.chat import router as chat_router
+    from plugins.web_ui.api.mcp import router as mcp_router
     app.include_router(chat_router)
+    app.include_router(mcp_router)
 
     # ── Health check ──
 
