@@ -438,20 +438,8 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ── Web UI pages ──
+    # ── Web UI ──
     from fastapi.responses import FileResponse
-
-    @app.get("/trace.html")
-    async def trace_page():
-        return FileResponse(Path("plugins/web_ui/static/trace.html"))
-
-    @app.get("/agents.html")
-    async def agents_page():
-        return FileResponse(Path("plugins/web_ui/static/agents.html"))
-
-    @app.get("/analytics.html")
-    async def analytics_page():
-        return FileResponse(Path("plugins/web_ui/static/analytics.html"))
 
     @app.get("/")
     async def web_ui():
