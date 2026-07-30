@@ -104,7 +104,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         """应用生命周期管理"""
         logger.info("Starting AI Agent Platform...", version="0.1.0")
 
-        # ── 初始化 Agent 引擎 ──
+        # ── Phase 1: Agent 引擎 ──
         from plugins.agent_engine.model_router import ModelRouter
         from plugins.agent_engine.engine import AgentEngine
         from plugins.agent_engine.tool_dispatch import ToolDispatcher
@@ -113,7 +113,6 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         tool_dispatcher = ToolDispatcher()
         engine = AgentEngine(router, config.get("agent", {}))
 
-        # 注册内置工具
         async def _echo(text: str) -> str:
             return text
         async def _now() -> str:
@@ -122,7 +121,6 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         tool_dispatcher.register("echo", _echo)
         tool_dispatcher.register("get_current_time", _now)
 
-        # 挂载到 app.state
         app.state.model_router = router
         app.state.tool_dispatcher = tool_dispatcher
         app.state.agent_engine = engine
@@ -130,22 +128,68 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         available = router.list_available_models()
         logger.info("Agent engine ready",
                      default_model=router._default_model,
-                     available_models=len(available),
-                     providers=list(router._providers.keys()))
+                     available_models=len(available))
 
-        # TODO: Phase 1 — init_db, init_redis, discover plugins
-        # from shared.db import init_db
-        # await init_db(config["database"]["url"])
+        # ── Phase 1: 三级安全网 ──
+        from plugins.security.content_filter import ContentFilter
+        from plugins.security.execution_guard import ExecutionGuard
+        from plugins.security.output_guard import OutputGuard
+        from plugins.security.tool_approval import ToolApproval
 
-        logger.info("All systems ready.")
+        app.state.content_filter = ContentFilter()
+        app.state.execution_guard = ExecutionGuard(config.get("security", {}))
+        app.state.output_guard = OutputGuard()
+        app.state.tool_approval = ToolApproval(config.get("security", {}))
+
+        logger.info("Security: L1+L2+L3 filters ready")
+
+        # ── Phase 1: 沙箱 ──
+        from plugins.security.sandbox import Sandbox, SandboxConfig
+        sandbox_cfg = config.get("security", {}).get("sandbox", {})
+        sandbox = Sandbox(SandboxConfig(
+            mode=sandbox_cfg.get("mode", "subprocess"),
+            memory_limit=sandbox_cfg.get("memory_limit", "512m"),
+            cpu_limit=sandbox_cfg.get("cpu_limit", 1.0),
+            timeout=sandbox_cfg.get("timeout", 30),
+            network_enabled=not sandbox_cfg.get("network_disabled", True),
+            read_only_root=sandbox_cfg.get("read_only_root", True),
+        ))
+        app.state.sandbox = sandbox
+        logger.info("Sandbox ready", mode=sandbox.mode)
+
+        # ── Phase 1: 分布式锁 ──
+        from plugins.locks.lock_manager import LockManager
+        redis_url = config.get("redis", {}).get("url", "")
+        lock_manager = LockManager(redis_url if redis_url else None)
+        app.state.lock_manager = lock_manager
+        logger.info("Lock manager ready", mode="redis" if redis_url else "optimistic")
+
+        # ── Phase 1: 降级链 ──
+        from plugins.resilience.resilience_manager import ResilienceManager
+        app.state.resilience = ResilienceManager(config)
+        logger.info("Resilience manager ready (L1/L2/L3 degradation)")
+
+        # ── Phase 1: 任务队列 ──
+        from plugins.worker.task_queue import TaskQueue, task_sandbox_exec, task_repo_clone
+        task_queue = TaskQueue(max_workers=4)
+        task_queue.register_handler("sandbox_exec", task_sandbox_exec)
+        task_queue.register_handler("repo_clone", task_repo_clone)
+        await task_queue.start()
+        app.state.task_queue = task_queue
+        logger.info("Task queue ready", workers=4)
+
+        logger.info("All systems ready.",
+                     security="L1+L2+L3",
+                     sandbox=sandbox.mode,
+                     lock="redis" if redis_url else "optimistic",
+                     degradation="L1+L2+L3",
+                     workers=4)
 
         yield  # App runs here
 
         # ── Graceful shutdown ──
         logger.info("Shutting down...")
-        # await plugin_manager.disable_all()
-        # from shared.db import close_db
-        # await close_db()
+        await task_queue.stop()
         logger.info("Goodbye.")
 
     app = FastAPI(
@@ -171,11 +215,20 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     # ── Health check ──
 
     @app.get("/health")
-    async def health():
+    async def health(request: Any = None):
+        sandbox = getattr(request.app.state, "sandbox", None) if request else None
+        resilience = getattr(request.app.state, "resilience", None) if request else None
         return {
             "status": "ok",
             "version": "0.1.0",
             "config_loaded": bool(config),
+            "phase1_components": {
+                "security": "L1+L2+L3",
+                "sandbox": sandbox.mode if sandbox else "not_loaded",
+                "resilience": "L1+L2+L3" if resilience else "not_loaded",
+                "locks": "available",
+                "task_queue": "available",
+            },
         }
 
     # ── Config inspection (dev only) ──
@@ -200,6 +253,47 @@ def create_app(config: dict[str, Any]) -> FastAPI:
             },
             "auth_enabled": config.get("auth", {}).get("enabled", False),
             "sandbox_mode": config.get("security", {}).get("sandbox", {}).get("mode"),
+            "degradation_levels": ["L1_model", "L2_tool", "L3_retrieval"],
+        }
+
+    # ── Security test endpoints (Phase 1) ──
+
+    @app.post("/api/v1/security/check-input")
+    async def check_input(body: dict):
+        """L1: 检测用户输入"""
+        text = body.get("text", "")
+        cf = app.state.content_filter
+        result = cf.check_input(text)
+        return {
+            "passed": result.passed,
+            "risk_level": result.risk_level,
+            "warnings": result.warnings,
+        }
+
+    @app.post("/api/v1/security/check-command")
+    async def check_command(body: dict):
+        """L2: 检测命令安全性"""
+        command = body.get("command", "")
+        eg = app.state.execution_guard
+        decision = eg.check(command)
+        return {
+            "allowed": decision.allowed,
+            "requires_approval": decision.requires_approval,
+            "reason": decision.reason,
+            "resource_limits": decision.resource_limits,
+        }
+
+    @app.post("/api/v1/security/filter-output")
+    async def filter_output(body: dict):
+        """L3: 过滤输出内容"""
+        text = body.get("text", "")
+        og = app.state.output_guard
+        result = og.filter(text)
+        return {
+            "redacted": result.text != text,
+            "text": result.text[:500],  # 返回前 500 字符
+            "redactions": result.redactions,
+            "blocked": result.blocked,
         }
 
     return app
