@@ -2,7 +2,13 @@ import { useChatStore } from "@/stores/chatStore";
 import { GitBranch } from "lucide-react";
 
 export function ChatHeader() {
-  const { model, task, models, setModel, setTask, activeId } = useChatStore();
+  const model = useChatStore((s) => s.model);
+  const task = useChatStore((s) => s.task);
+  const models = useChatStore((s) => s.models);
+  const setModel = useChatStore((s) => s.setModel);
+  const setTask = useChatStore((s) => s.setTask);
+  const activeId = useChatStore((s) => s.activeId);
+  const error = useChatStore((s) => s.error);
 
   return (
     <div className="h-12 border-b border-[#2a2d3a] flex items-center px-4 gap-3 shrink-0">
@@ -20,7 +26,10 @@ export function ChatHeader() {
       <button className="text-xs text-[#8b8fa3] hover:text-[#e1e4ea] flex items-center gap-1 px-2 py-1 rounded border border-[#2a2d3a]">
         <GitBranch size={14} /> 分支
       </button>
-      <span className="text-xs text-[#8b8fa3] ml-auto">会话: {activeId?.slice(0, 8)}</span>
+      <span className="text-xs text-[#8b8fa3] ml-auto">
+        {error ? <span className="text-[#f87171] mr-3 cursor-pointer" onClick={() => useChatStore.getState().clearError()} title="点击清除">{error.slice(0, 40)}</span> : null}
+        会话: {activeId?.slice(0, 8)}
+      </span>
     </div>
   );
 }
