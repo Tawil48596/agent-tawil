@@ -13,7 +13,6 @@ AI Agent Platform — 应用入口
 
 import json
 import os
-import signal
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -24,7 +23,6 @@ import uvicorn
 import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 # ── Config loading ──
 
@@ -475,20 +473,11 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     # ── Health check (must be before SPA fallback) ──
 
     @app.get("/health")
-    async def health(request: Any = None):
-        sandbox = getattr(request.app.state, "sandbox", None) if request else None
-        resilience = getattr(request.app.state, "resilience", None) if request else None
+    async def health():
         return {
             "status": "ok",
             "version": "0.1.0",
             "config_loaded": bool(config),
-            "phase1_components": {
-                "security": "L1+L2+L3",
-                "sandbox": sandbox.mode if sandbox else "not_loaded",
-                "resilience": "L1+L2+L3" if resilience else "not_loaded",
-                "locks": "available",
-                "task_queue": "available",
-            },
         }
 
     # ── Config inspection (dev only) ──
@@ -557,12 +546,13 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         }
 
     # ── SPA fallback (MUST be the very last route) ──
+    from fastapi.responses import Response as _Response
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str):
         static_index = Path("plugins/web_ui/static/index.html")
         if static_index.exists():
             return FileResponse(static_index)
-        raise HTTPException(404)
+        return _Response("Not Found", status_code=404)
 
     return app
 
