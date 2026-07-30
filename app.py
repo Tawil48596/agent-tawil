@@ -438,7 +438,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ── Web UI ──
+    # ── Web UI root ──
     from fastapi.responses import FileResponse
 
     @app.get("/")
@@ -472,7 +472,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     app.include_router(analytics_api_router)
     app.include_router(github_api_router)
 
-    # ── Health check ──
+    # ── Health check (must be before SPA fallback) ──
 
     @app.get("/health")
     async def health(request: Any = None):
@@ -555,6 +555,14 @@ def create_app(config: dict[str, Any]) -> FastAPI:
             "redactions": result.redactions,
             "blocked": result.blocked,
         }
+
+    # ── SPA fallback (MUST be the very last route) ──
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        static_index = Path("plugins/web_ui/static/index.html")
+        if static_index.exists():
+            return FileResponse(static_index)
+        raise HTTPException(404)
 
     return app
 
