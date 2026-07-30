@@ -802,6 +802,475 @@ auth/
 
 ---
 
+### 2.12 分布式锁与并发控制 (`locks/`)
+
+**核心职责：** 多实例并发场景下防止记忆覆盖、分支冲突、竞态写入。
+
+```
+locks/
+├── plugin.py              # 锁插件入口
+├── redis_lock.py          # Redis Redlock 分布式锁
+├── optimistic_lock.py     # CRC 校验乐观锁 (SQLite 单节点用)
+└── lock_manager.py        # 锁管理器 (自动选择策略)
+```
+
+**设计要点：**
+
+- **Redis Redlock：** 多实例部署时，对长期记忆写入、会话分支编辑操作加分布式锁
+- **CRC 乐观锁：** 单节点 SQLite 场景下，写入前校验 CRC，冲突时重试
+- **锁定粒度：** `memory:{user_id}:write`、`session:{session_id}:branch`、`agent:{task_id}:checkpoint`
+
+```python
+class LockManager:
+    def __init__(self, redis_url: str | None = None):
+        self._redis = redis.from_url(redis_url) if redis_url else None
+
+    async def with_lock(self, key: str, ttl: int = 10):
+        """上下文管理器: 自动选择 Redlock 或乐观锁"""
+        if self._redis:
+            return RedisLock(self._redis, key, ttl)
+        else:
+            return OptimisticLock(key)
+```
+
+---
+
+### 2.13 服务降级与容灾 (`resilience/`)
+
+**核心职责：** 区分模型降级与系统资源降级，保障推理主循环不崩溃。
+
+```
+resilience/
+├── plugin.py              # 韧性插件入口
+├── degradation.py         # 降级策略引擎
+├── circuit_breaker.py     # 熔断器 (外部 API 连续失败 → 短路)
+├── fallback_chain.py      # 降级链配置
+└── health_monitor.py      # 外部依赖健康监控
+```
+
+**三级降级策略：**
+
+| 级别 | 触发条件 | 降级行为 | 用户感知 |
+|------|---------|---------|---------|
+| **L1 模型降级** | LLM Provider 不可用 | 切换备用 Provider | 透明（自动） |
+| **L2 工具降级** | GitHub MCP / 搜索 API 异常 | 降级为本地快照模式，工具返回 `{"error": "service_unavailable", "fallback": true}` | `⚠️ GitHub 搜索暂时不可用，已切换至本地模式` |
+| **L3 检索降级** | Embedding / Reranker 超时 | 向量检索 → 纯 BM25 关键词检索 | `⚠️ 语义检索超时，已降级为关键词匹配` |
+
+```python
+class DegradationEngine:
+    async def route_with_fallback(self, request, primary, fallback):
+        try:
+            return await primary(request)
+        except (ServiceUnavailable, TimeoutError) as e:
+            logger.warning("Degrading", primary=primary.__name__, reason=str(e))
+            return await fallback(request)
+```
+
+---
+
+### 2.14 无状态网关与任务队列 (`worker/`)
+
+**核心职责：** FastAPI 层完全无状态，耗时任务下沉到独立 Worker 队列。
+
+```
+worker/
+├── plugin.py              # Worker 插件入口
+├── task_queue.py          # 任务队列 (Redis / RabbitMQ)
+├── worker_pool.py         # Worker 线程/进程池
+├── tasks/                 # 异步任务定义
+│   ├── code_chunking.py   # AST 代码分块 (Tree-sitter)
+│   ├── sandbox_exec.py    # Docker 沙箱执行
+│   ├── embedding_batch.py # 批量 Embedding
+│   └── repo_clone.py      # GitHub 仓库克隆
+└── scheduler.py           # 任务调度器 (优先级 + 依赖图)
+```
+
+```
+用户请求 → FastAPI (无状态) → 消息网关
+                │
+       ┌────────┼────────┐
+       ▼        ▼        ▼
+   即时响应  任务入队  流式 SSE
+  (查询DB)  (Redis Q)  (LLM token)
+                │
+                ▼
+         Worker Pool (独立进程)
+           ├── AST 代码分块
+           ├── Docker 沙箱
+           └── 批量 Embedding
+```
+
+---
+
+### 2.15 分层上下文树 (`context_tree/`)
+
+**核心职责：** 将扁平消息窗口结构化为「常驻环境 + 动态工作区 + 可折叠历史操作树」。
+
+```
+context_tree/
+├── plugin.py              # 上下文树插件入口
+├── tree_builder.py        # 上下文树构建器
+├── node_types.py          # 节点类型定义
+├── expansion.py           # 按需解压缩 (expand_history_node)
+├── pruning.py             # 智能剪枝策略
+└── serialization.py       # 树结构 → LLM 消息序列化
+```
+
+**三层上下文结构：**
+
+```
+┌─────────────────────────────────────────────┐
+│  L1: 环境设定 (常驻, ~1K tokens)              │
+│  系统角色 · 用户画像 · 项目约束 · 安全规则     │
+├─────────────────────────────────────────────┤
+│  L2: 实时工作区 (动态, ~50% 窗口)              │
+│  当前任务 · 最近 N 轮对话 · 活跃工具状态       │
+├─────────────────────────────────────────────┤
+│  L3: 历史操作树 (可折叠, ~50% 窗口)            │
+│  ├── [已折叠] 前置任务 A (摘要: "配置了数据库") │
+│  ├── [已折叠] 前置任务 B (摘要: "修复了3个bug") │
+│  └── [展开中] 当前任务 C                       │
+│       ├── Step 1: 读取文件 ✓                  │
+│       ├── Step 2: 分析代码 ✓                  │
+│       └── Step 3: 执行修改 → (进行中)          │
+└─────────────────────────────────────────────┘
+```
+
+**Agent 主动解压缩指令：**
+
+```python
+# Agent 可以调用此工具来展开历史节点
+{
+    "name": "expand_history_node",
+    "description": "展开上下文树中被折叠的历史操作节点，获取完整详情",
+    "parameters": {
+        "node_id": "string - 节点 ID",
+        "depth": "int - 展开深度 (1=仅该节点, 2=含子节点)"
+    }
+}
+```
+
+---
+
+### 2.16 宏工具 (Macro-Tool / Pipelined Tool Calls)
+
+**核心职责：** 将有严格线性依赖的多步工具调用打包为单次请求，降低往返延迟。
+
+```
+macro_tools/
+├── plugin.py              # 宏工具插件入口
+├── macro_registry.py      # 宏工具注册表
+├── macro_executor.py      # 宏工具执行引擎
+├── pipeline_builder.py    # 自动发现高频调用序列 → 建议创建宏
+└── builtin_macros/        # 内置宏工具
+    ├── read_and_edit.py   # list_files → read_file → edit_file
+    ├── clone_and_setup.py # clone_repo → install_deps → run_tests
+    └── search_and_read.py # search_code → read_matches
+```
+
+```python
+# 示例: 三步合一
+@register_macro(name="repo_explore", steps=["list_files", "read_file"])
+async def repo_explore(owner: str, repo: str, target_path: str):
+    """列出文件结构 → 自动读取关键文件 → 返回结构化概览"""
+    files = await list_files(owner, repo, target_path)
+    key_files = [f for f in files if f.endswith((".py", ".md", ".toml"))][:5]
+    contents = {}
+    for f in key_files:
+        contents[f] = await read_file(owner, repo, f)
+    return {"structure": files, "key_files": contents}
+```
+
+**预测性宏建议：** 系统自动检测高频调用序列，当某序列出现 >10 次时，提示用户可创建宏。
+
+---
+
+### 2.17 检查点与共享黑板 (`checkpoint/`)
+
+**核心职责：** 消除主编排器单点阻塞，子代理异常后可续跑。
+
+```
+checkpoint/
+├── plugin.py              # Checkpoint 插件入口
+├── blackboard.py          # 共享 Key-Value 黑板
+├── checkpoint_store.py    # 检查点持久化 (Redis / DB)
+├── recovery.py            # 异常恢复引擎
+└── snapshot.py            # 状态快照 (Agent 内存 + 工具状态)
+```
+
+**多智能体黑板模型：**
+
+```
+                    ┌──────────────────────┐
+                    │   共享黑板 (Blackboard) │
+                    │  Key → Value (JSON)    │
+                    │  task:frontend:status  │
+                    │  task:backend:schema   │
+                    │  task:db:migration     │
+                    └──┬───┬───┬──────────┘
+                       │   │   │
+          ┌────────────┘   │   └────────────┐
+          ▼                ▼                ▼
+    ┌──────────┐    ┌──────────┐    ┌──────────┐
+    │Worker A  │    │Worker B  │    │Worker C  │
+    │前端组件   │    │API 开发   │    │DB 迁移    │
+    └──────────┘    └──────────┘    └──────────┘
+          │               │               │
+          └───────────────┼───────────────┘
+                          │
+              ┌───────────▼───────────┐
+              │  Worker A 异常退出     │
+              │  新 Worker A' 读取     │
+              │  task:frontend:ckpt   │
+              │  从断点续跑 →         │
+              └───────────────────────┘
+```
+
+---
+
+### 2.18 增强 RAG：AST 分块 + 检索守卫 (`rag/` 补充)
+
+**AST-Aware 代码分块 (Tree-sitter)：**
+
+```python
+class ASTChunker:
+    """基于 Tree-sitter 的代码感知分块，保留类名/方法签名/import 层级"""
+
+    def chunk(self, code: str, language: str) -> list[CodeChunk]:
+        tree = parser.parse(bytes(code, "utf-8"))
+        chunks = []
+        for node in self._walk_functions_and_classes(tree.root_node):
+            chunks.append(CodeChunk(
+                content=node.text.decode("utf-8"),
+                node_type=node.type,         # class_definition / function_definition
+                signature=self._extract_signature(node),
+                imports=self._extract_imports(tree.root_node),
+                parent_class=self._find_parent_class(node),
+                line_range=(node.start_point[0], node.end_point[0]),
+            ))
+        return chunks
+```
+
+**Parent-Child Chunking（非结构化文档）：**
+
+```
+大块 (Parent, 1024 tokens, 送入 LLM)
+├── 小块 1 (Child, 256 tokens, 用于向量检索)
+├── 小块 2 (Child, 256 tokens)
+├── 小块 3 (Child, 256 tokens)
+└── 小块 4 (Child, 256 tokens)
+
+检索时: 用小块做 Embedding 匹配
+注入时: 将匹配小块所属的整个大块送入 LLM 上下文
+```
+
+**RAG 检索守卫 (Relevance Guardrail)：**
+
+```python
+class RetrievalGuardrail:
+    """在注入前检查检索结果相关性"""
+
+    async def filter(self, query: str, results: list[RetrievalResult]) -> list[RetrievalResult]:
+        filtered = []
+        for r in results:
+            # 1. 硬性置信度阈值
+            if r.score < self.min_score:
+                continue
+            # 2. 轻量相关性断言 (小模型快速判断)
+            if await self._relevance_check(query, r.content):
+                filtered.append(r)
+
+        if not filtered:
+            # 所有结果置信度偏低 → 阻断注入，声明知识缺失
+            return []  # 触发 "我未在知识库中找到相关信息"
+        return filtered
+```
+
+---
+
+### 2.19 微隔离沙箱与三级安全网 (`security/` 补充)
+
+**沙箱升级路径：**
+
+```
+开发阶段: subprocess (轻量快速)
+    ↓
+生产阶段: Docker (资源隔离)
+    ↓
+高风险场景: gVisor / Firecracker (微虚拟机级隔离)
+    ↓
+外部不可信代码: E2B.dev (云端沙箱 API)
+```
+
+**三级安全网：**
+
+```
+用户输入
+    │
+    ▼
+┌──────────────────────────────────────┐
+│ L1: 输入过滤层 (Pre-prompt)           │
+│  · 提示词越权注入检测 (正则+模型)      │
+│  · Jailbreak 特征库匹配               │
+│  · PII 敏感信息扫描                   │
+│  · 输入长度/频率异常检测              │
+└────────────┬─────────────────────────┘
+             │ ✓ 通过
+             ▼
+┌──────────────────────────────────────┐
+│ L2: 执行拦截层 (Pre-hook)             │
+│  · 高危通配符拦截 (rm -rf /, ...)    │
+│  · 未授权文件路径写入检测             │
+│  · 网络出站白名单检查                 │
+│  · 内存/CPU 硬配额限制               │
+│  · 需要审批的危险操作 → 挂起等待      │
+└────────────┬─────────────────────────┘
+             │ ✓ 通过
+             ▼
+┌──────────────────────────────────────┐
+│ L3: 输出过滤层 (Post-hook)            │
+│  · API Key / Token 强掩码 (Redaction) │
+│  · PII 脱敏 (邮箱/手机/身份证)        │
+│  · NSFW 内容过滤                     │
+│  · 敏感文件路径移除                   │
+└────────────┬─────────────────────────┘
+             │ ✓ 清理
+             ▼
+       流式输出给用户
+```
+
+---
+
+### 2.20 Generative UI / 动态工具卡片 (`generative_ui/`)
+
+**核心职责：** 工具返回结果渲染为互动组件，而非单一 Markdown。
+
+```
+generative_ui/
+├── plugin.py              # GenUI 插件入口
+├── renderer.py            # 动态组件渲染引擎
+├── schema_mapper.py       # 工具 Schema → UI 组件映射
+├── components/            # 动态组件库
+│   ├── code_diff.py       # 代码差异 Diff 视图
+│   ├── repo_tree.py       # 可点击 GitHub 仓库文件树
+│   ├── data_chart.py      # 数据图表 (折线/柱状/饼图)
+│   ├── progress_card.py   # 任务进度卡片
+│   ├── comparison_table.py # 结构化对比表
+│   └── interactive_form.py # 互动表单
+└── templates/             # 组件模板
+```
+
+**Schema → Component 映射：**
+
+```python
+COMPONENT_MAP = {
+    "github_search_repos": "RepoCardGrid",
+    "github_read_file": "CodeViewer",
+    "github_list_files": "FileTree",
+    "web_search": "SearchResultList",
+    "code_exec": "TerminalOutput",
+    "data_analysis": "ChartRenderer",
+}
+```
+
+---
+
+### 2.21 人机协作中断 (HITL — Human-in-the-Loop)
+
+**核心职责：** 高风险操作前挂起，用户可在 UI 中查看/修改 Agent 状态后放行。
+
+```python
+@dataclass
+class HITLRequest:
+    id: str
+    type: str                  # "approval" | "edit" | "confirm"
+    title: str                 # "即将合并分支 main ← feature-x"
+    description: str
+    agent_state: dict          # 当前 Agent 的短时内存状态 (可编辑)
+    proposed_action: dict      # Agent 提议的操作
+    options: list[str]         # ["approve", "deny", "edit_and_retry"]
+    timeout: int = 300         # 超时自动拒绝
+```
+
+**交互流程：**
+
+```
+Agent 执行高风险操作
+    │
+    ▼
+触发 HITL 挂起 → UI 弹窗:
+  "Agent 即将执行: git merge feature-x → main
+   [查看 Diff] [修改参数] [批准] [拒绝]"
+    │
+    ├── 用户批准 → Agent 继续
+    ├── 用户修改短时内存 → Agent 用修改后的上下文重试
+    └── 超时/拒绝 → Agent 回退，告知用户
+```
+
+---
+
+### 2.22 评估与追踪 (`evals/`)
+
+**核心职责：** LLM-as-a-Judge 离线评测 + Trace Viewer 调用链可视化。
+
+```
+evals/
+├── plugin.py              # Eval 插件入口
+├── judge.py               # LLM-as-a-Judge 评测引擎
+├── metrics.py             # 评测指标: Pass@1, 工具精准度, 幻觉率
+├── test_suites/           # 评测测试集
+│   ├── reasoning.yaml     # 推理能力测试
+│   ├── tool_use.yaml      # 工具调用精准度测试
+│   └── safety.yaml        # 安全边界测试
+├── runner.py              # 评测运行器 (CLI: ai-agent eval)
+├── trace_viewer.py        # Trace 可视化数据 API
+└── compare.py             # 提示词/模型 A/B 对比
+```
+
+**Trace Viewer 数据结构：**
+
+```python
+@dataclass
+class TraceSpan:
+    span_id: str
+    parent_id: str | None
+    type: str            # llm_call | tool_call | agent_think | rag_retrieval
+    model: str
+    input: dict
+    output: dict
+    tokens: int
+    latency_ms: int
+    start_time: datetime
+    children: list["TraceSpan"]
+```
+
+---
+
+### 2.23 模块目录补充
+
+以上新增模块在项目中的位置：
+
+```
+ai-agent-platform/
+├── plugins/
+│   ├── locks/                    # 2.12 分布式锁
+│   ├── resilience/               # 2.13 服务降级
+│   ├── worker/                   # 2.14 任务队列
+│   ├── context_tree/             # 2.15 分层上下文树
+│   ├── macro_tools/              # 2.16 宏工具
+│   ├── checkpoint/               # 2.17 检查点黑板
+│   ├── generative_ui/            # 2.20 动态 UI 卡片
+│   ├── hitl/                     # 2.21 人机协作
+│   └── evals/                    # 2.22 评测追踪
+│
+├── extensions/                   # 第三方沙箱适配器
+│   ├── sandbox_subprocess/       # 内置 subprocess
+│   ├── sandbox_docker/           # Docker 沙箱
+│   └── sandbox_e2b/              # E2B 云端沙箱
+```
+
+---
+
 ## 三、项目目录结构 (Phase 1 精简版)
 
 > 此为 Phase 1 单体结构，快速启动用。Phase 4 起逐步迁移到第九节插件化架构。
@@ -1065,105 +1534,151 @@ ai-agent-platform/
 
 ---
 
-## 六、实施路线图
+## 六、实施路线图（更新版）
 
-### Phase 1: 核心骨架 (4-6 周)
+### 优先级体系
 
-**目标：** 项目初始化 + Agent 引擎核心循环 + 基础对话
+```
+Phase 1-2：🔴 高优 — 安全兜底 + 稳定可用
+    ├── 容器化沙箱（淘汰纯 subprocess）
+    ├── 三级安全过滤网（Pre-hook + Post-hook）
+    ├── 分布式锁/乐观锁（防并发记忆互写损坏）
+    ├── 服务降级链（模型降级 + 工具降级 + 检索降级）
+    └── 无状态网关 + 任务队列解耦
+         │
+         ▼
+Phase 3-4：🟡 中优 — 检索质量 + 产品表现力
+    ├── AST 语法树代码分块 + RAG 检索置信度拦截
+    ├── Parent-Child Chunking（非结构化文档）
+    ├── 宏工具（Macro-Tool 批量依赖调用）
+    ├── 分层上下文树（常驻 + 动态 + 可折叠历史）
+    └── Generative UI 动态工具卡片渲染
+         │
+         ▼
+Phase 5+：🔵 后置 — 规模化调度 + 框架评估
+    ├── 检查点/共享黑板（多智能体断点续跑）
+    ├── 人机协作中断 (HITL)
+    ├── LLM-as-a-Judge 评测管线
+    ├── Trace Viewer 调用链可视化
+    └── 记忆系统升级为分层动态上下文树
+```
 
-| 周次 | 任务 | 交付物 | 验收标准 |
-|------|------|--------|---------|
-| W1-2 | 项目初始化 | pyproject.toml, 目录结构, CI/CD | `app.py` 启动成功，插件发现/加载正常，CI 全绿 |
-| W3-4 | Agent 引擎 | engine.py, prompt_builder.py, model_router.py | CLI 多轮对话正常，支持 OpenAI + Anthropic |
-| W5-6 | 对话管理 + 记忆基础 | session_store, message_store, 短期记忆, titleizer | 会话持久化，重启恢复对话 |
+---
 
-**详细清单：**
-- [ ] 项目初始化 (pyproject.toml, 目录结构, CI/CD)
-- [ ] PluginManager + EventBus + DIContainer 最小实现
-- [ ] Agent 引擎核心循环 + 工具调用框架
-- [ ] 对话管理 (SQLite session + message store)
-- [ ] LLM Provider 接入 (至少 3 个：OpenAI, Anthropic, DeepSeek)
-- [ ] 短期记忆 (当前会话消息窗口)
-- [ ] 上下文压缩 (滑动窗口 + LLM 摘要)
-- [ ] 基础 CLI 入口
+### Phase 1: 安全兜底 + 核心骨架 (已完成 ✅ → 扩展) (3-4 周)
 
-### Phase 2: GitHub + MCP (2-3 周)
+**目标：** 已有引擎的基础上，补齐安全底线
 
-**目标：** MCP 协议完整实现 + GitHub 集成
+- [x] ✅ Agent 引擎核心循环 + 模型路由
+- [x] ✅ 对话管理 (内存存储)
+- [x] ✅ 基础 CLI 入口 + REST API
+- [ ] 🔴 容器化代码执行沙箱 (Docker → gVisor)
+- [ ] 🔴 三级安全过滤网 (L1 输入检测 + L2 执行拦截 + L3 输出掩码)
+- [ ] 🔴 危险工具审批流 (Pre-hook 挂起 → UI 确认)
+- [ ] 🔴 分布式锁 (Redis Redlock / CRC 乐观锁)
+- [ ] 🔴 系统降级链 (模型降级 + 工具降级 + 检索降级)
+- [ ] 无状态网关改造 + 任务队列 (Redis Queue)
+
+**验收：** 执行 `rm -rf /` 被拦截并审批；API Key 不在输出中泄露；多实例并发写入记忆无覆盖。
+
+---
+
+### Phase 2: 韧性 + 外部集成 (3-4 周)
+
+**目标：** 服务不崩溃 + GitHub MCP 集成
 
 - [ ] MCP 协议实现 (Server + Client)
-- [ ] GitHub MCP 适配器 (含速率限制)
-- [ ] MCP 工具发现 & 注册
-- [ ] GitHub OAuth 流程
-- [ ] 仓库克隆 + 本地工作区管理
+- [ ] GitHub MCP 适配器 (含速率限制 + OAuth)
+- [ ] 熔断器 (外部 API 连续失败 → 短路保护)
+- [ ] Embedding / Reranker 超时 → BM25 降级
+- [ ] 对话管理持久化 (SQLite session + message store + FTS5)
+- [ ] 长期记忆 (ChromaDB) + 记忆衰减 + 会话巩固
 
-**验收：** Agent 通过 MCP 成功搜索 GitHub、读取仓库文件、克隆仓库
+**验收：** 断网时 GitHub 工具优雅降级为本地模式，推理主循环不崩溃；跨会话记忆召回正常。
 
-### Phase 3: 记忆 & RAG (3-4 周)
+---
 
-**目标：** 长期记忆 + RAG 检索引擎
+### Phase 3: 检索质量 + 上下文升级 (3-4 周)
 
-- [ ] 长期记忆 (ChromaDB) + 记忆衰减
-- [ ] 会话结束自动巩固 (consolidation)
-- [ ] RAG 引擎 (索引 + 混合检索 + 重排序)
+**目标：** RAG 精准度 + 长对话智能
+
+- [ ] AST-Aware 代码分块 (Tree-sitter 集成)
+- [ ] Parent-Child Chunking (非结构化文档)
+- [ ] RAG 检索守卫 (Relevance Guardrail — 低置信度阻断)
 - [ ] 查询改写 (HyDE + 多角度)
-- [ ] 文档源适配器 (GitHub, Web, PDF, Markdown)
-- [ ] 引用追踪 (检索结果标注 source_id)
+- [ ] 分层上下文树 (常驻环境 + 动态工作区 + 可折叠历史)
+- [ ] Agent `expand_history_node` 主动解压缩能力
+- [ ] 宏工具 (Macro-Tool 批量依赖调用打包)
 
-**验收：** 跨会话记忆召回、上传文档后可基于文档问答
+**验收：** 代码检索保留函数签名和 import 上下文；检索无匹配时声明"知识库未覆盖"而非瞎编；长对话 >100 轮后上下文树自动折叠/展开。
 
-### Phase 4: 工具市场 (2-3 周)
+---
 
-**目标：** 工具注册/安装/版本管理
+### Phase 4: 工具市场 + 产品表现力 (3-4 周)
 
-- [ ] 工具注册 Schema + 版本管理
-- [ ] 内置工具集 (web_search, terminal, file_ops, code_exec)
-- [ ] 工具安装/卸载/热加载
-- [ ] 工具依赖解析 (env + packages + system)
-- [ ] 危险工具审批流
-- [ ] 代码沙箱 (subprocess / Docker)
+**目标：** 工具生态 + UI 体验升级
 
-**验收：** 用户可浏览、安装、卸载工具，Agent 自动调用已安装工具
+- [ ] 工具注册 Schema + 版本管理 + 热加载
+- [ ] 内置工具集 (web_search, terminal, file_ops, code_exec, browser)
+- [ ] 工具安装/卸载 + 依赖解析
+- [ ] Generative UI 动态工具卡片 (Diff 视图 / 文件树 / 图表 / 进度卡)
+- [ ] 工具 Schema → UI 组件自动映射
+- [ ] Web UI (React + Vite + Vercel AI SDK + Shadcn/ui)
+- [ ] 模型选择器下拉菜单 (UI 内切换)
 
-### Phase 5: 多智能体 (3-4 周)
+**验收：** `github_search_repos` 返回可点击仓库卡片而非纯文本；`code_diff` 渲染语法高亮 Diff 视图。
 
-**目标：** 任务委派 + 并行执行 + 层级编排
+---
 
-- [ ] 子代理委派引擎
-- [ ] 并行执行 + 结果聚合
-- [ ] 代理间通信 (消息传递)
-- [ ] 层级编排模式
-- [ ] 子代理错误恢复 (重试 + 退避)
-- [ ] 实时子代理日志 (WebSocket)
+### Phase 5: 多智能体 + 协作控制 (3-4 周)
 
-**验收：** 并发运行 3+ 子代理完成复杂任务，失败自动重试
+**目标：** 多代理并行 + 断点续跑 + 人机协作
 
-### Phase 6: 接入 & 统计 (2-3 周)
+- [ ] 子代理委派引擎 + 并行执行 + 结果聚合
+- [ ] 共享黑板 (Key-Value 中间状态)
+- [ ] 检查点持久化 (Worker 异常退出 → 新 Worker 续跑)
+- [ ] 人机协作中断 (HITL — 高风险操作前挂起)
+- [ ] 代理间通信 (消息传递协议)
+- [ ] 层级编排模式 (主编排器 → 子编排器 → Worker)
 
-**目标：** 消息平台接入 + 用量仪表板
+**验收：** 3+ 子代理并行处理大项目；单个 Worker 崩溃后自动从 Checkpoint 恢复；合并分支前弹出 HITL 审批。
 
-- [ ] 消息网关 (Telegram / Discord / Slack)
-- [ ] Web UI (React + Vite + Vercel AI SDK)
-- [ ] 使用量统计 + 成本追踪 + 预算告警
-- [ ] 可观测性 (OpenTelemetry + 结构化日志)
-- [ ] 仪表板
+---
+
+### Phase 6: 评估体系 + 可观测性 (2-3 周)
+
+**目标：** 质量可度量 + 调用链可追踪
+
+- [ ] LLM-as-a-Judge 评测管线 (Pass@1, 工具精准度, 幻觉率)
+- [ ] 测试集管理 (reasoning / tool_use / safety)
+- [ ] 提示词/模型 A/B 对比
+- [ ] Trace Viewer 调用链可视化 (LangSmith 风格)
+- [ ] CI/CD 集成评测自动回测
+- [ ] 用量仪表板 + 成本追踪 + 预算告警
 - [ ] 认证授权 (API Key + JWT)
 
-**验收：** Telegram Bot 可用，Web UI 完整对话体验，仪表板数据显示正确
+**验收：** 修改提示词后自动跑评测套件；Trace Viewer 可慢动作回放完整 Agent 调用链。
 
-### Phase 7: 打磨 & 部署 (2 周)
+---
 
-**目标：** 容器化 + 性能优化 + 文档
+### Phase 7: 部署 & 打磨 (2 周)
 
-- [ ] Docker 化部署 (docker-compose up 一键启动)
+**目标：** 一键部署 + 性能达标 + 文档完善
+
+- [ ] Docker 多阶段构建 + docker-compose 一键启动
 - [ ] 性能优化 (TTFT < 2s, 吞吐 > 30 tok/s)
 - [ ] API 文档 (OpenAPI/Swagger)
 - [ ] 用户指南 + 开发者文档
 - [ ] 安全审计 (依赖扫描 + 渗透测试)
+- [ ] 消息平台接入 (Telegram / Discord / Slack)
 
-**验收：** 一键部署成功，性能指标达标，文档覆盖所有模块
+**验收：** `docker-compose up` 一键启动；性能指标达标；文档覆盖所有模块。
 
-**总计：约 18-26 周 (4.5-6.5 个月，单人开发)**
+---
+
+**总计：约 18-28 周 (4.5-7 个月，单人开发)**
+
+> **与旧版路线的差异：** 安全（沙箱 + 三级安全网 + 并发锁）提前到 Phase 1，RAG 质量（AST 分块 + 守卫）提前到 Phase 3，新增 Phase 5 检查点/HITL、Phase 6 评测管线/Trace Viewer。
 
 ---
 
