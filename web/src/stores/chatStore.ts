@@ -75,11 +75,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendMessage: async (text) => {
-    const state = get();
-    const sid = state.activeId;
+    let sid = get().activeId;
     if (!sid) {
-      set({ error: "请先创建或选择一个会话" });
-      return;
+      try {
+        sid = await get().createSession();
+        // Navigate after creating session
+        if (typeof window !== "undefined") {
+          window.history.pushState(null, "", `/chat/${sid}`);
+        }
+      } catch {
+        set({ error: "无法创建会话" });
+        return;
+      }
     }
 
     set({ error: null, streaming: true, streamContent: "" });
