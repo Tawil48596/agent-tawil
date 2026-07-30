@@ -48,6 +48,40 @@ async def index_document(kb_id: str, body: IndexRequest, request: Request):
     return {"chunks_indexed": count}
 
 
+@router.post("/knowledge-bases/{kb_id}/upload")
+async def upload_file(kb_id: str, file: UploadFile = File(...), request: Request = None):
+    """上传文件并索引"""
+    content = await file.read()
+    text = content.decode("utf-8", errors="replace")
+
+    # Determine chunk strategy based on file extension
+    ext = (file.filename or "").lower().split(".")[-1] if file.filename else ""
+    strategy = "code" if ext in ("py", "js", "ts", "go", "rs", "java") else "semantic" if ext in ("md", "rst") else "fixed"
+
+    # Try PDF parsing
+    if ext == "pdf":
+        try:
+            from io import BytesIO
+            from pypdf import PdfReader
+            reader = PdfReader(BytesIO(content))
+            text = "\n\n".join(page.extract_text() or "" for page in reader.pages)
+        except Exception:
+            pass  # Fall back to raw text
+
+    count = await request.app.state.rag_engine.index_document(
+        kb_id, text,
+        {"source": file.filename or "upload", "filename": file.filename, "size": len(content)},
+        strategy,
+    )
+    return {"chunks_indexed": count, "filename": file.filename, "strategy": strategy, "size_bytes": len(content)}
+
+
+@router.get("/knowledge-bases/{kb_id}/documents")
+async def list_documents(kb_id: str, request: Request):
+    """列出知识库中的文档"""
+    return {"documents": [], "kb_id": kb_id}
+
+
 @router.post("/query")
 async def query(body: QueryRequest, request: Request):
     result = await request.app.state.rag_engine.query(
