@@ -5,9 +5,7 @@ description = "通用 AI Agent 平台 — 多智能体协作、MCP 网关、RAG 
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
-authors = [
-    {name = "Tawil48596"}
-]
+authors = []
 keywords = ["ai", "agent", "llm", "rag", "mcp", "multi-agent"]
 
 dependencies = [
@@ -100,6 +98,7 @@ all = [
 
 [project.scripts]
 ai-agent = "app:main"
+ai-agent-cli = "cli:main"
 
 [build-system]
 requires = ["hatchling"]

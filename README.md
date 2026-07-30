@@ -2,8 +2,6 @@
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![CI](https://github.com/Tawil48596/ai-agent-platform/actions/workflows/test.yml/badge.svg)](https://github.com/Tawil48596/ai-agent-platform/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/Tawil48596/ai-agent-platform/branch/main/graph/badge.svg)](https://codecov.io/gh/Tawil48596/ai-agent-platform)
 
 通用 AI Agent 平台 — 具备 GitHub 开源项目浏览/调用能力、多智能体协作、工具市场、MCP 网关、RAG 检索增强、长上下文记忆管理。
 
@@ -34,7 +32,8 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/Tawil48596/ai-agent-platform.git
+git clone <repo-url>
+# 或直接下载源码
 cd ai-agent-platform
 
 # 安装依赖

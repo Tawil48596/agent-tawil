@@ -104,10 +104,38 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         """应用生命周期管理"""
         logger.info("Starting AI Agent Platform...", version="0.1.0")
 
-        # TODO: Phase 1 — init_db, init_redis, discover plugins, enable plugins
+        # ── 初始化 Agent 引擎 ──
+        from plugins.agent_engine.model_router import ModelRouter
+        from plugins.agent_engine.engine import AgentEngine
+        from plugins.agent_engine.tool_dispatch import ToolDispatcher
+
+        router = ModelRouter(config)
+        tool_dispatcher = ToolDispatcher()
+        engine = AgentEngine(router, config.get("agent", {}))
+
+        # 注册内置工具
+        async def _echo(text: str) -> str:
+            return text
+        async def _now() -> str:
+            import datetime
+            return datetime.datetime.now().isoformat()
+        tool_dispatcher.register("echo", _echo)
+        tool_dispatcher.register("get_current_time", _now)
+
+        # 挂载到 app.state
+        app.state.model_router = router
+        app.state.tool_dispatcher = tool_dispatcher
+        app.state.agent_engine = engine
+
+        available = router.list_available_models()
+        logger.info("Agent engine ready",
+                     default_model=router._default_model,
+                     available_models=len(available),
+                     providers=list(router._providers.keys()))
+
+        # TODO: Phase 1 — init_db, init_redis, discover plugins
         # from shared.db import init_db
         # await init_db(config["database"]["url"])
-        # ... plugin manager ...
 
         logger.info("All systems ready.")
 
@@ -115,11 +143,9 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
         # ── Graceful shutdown ──
         logger.info("Shutting down...")
-        # TODO: Phase 1 — disable plugins, close DB, close Redis
         # await plugin_manager.disable_all()
         # from shared.db import close_db
         # await close_db()
-
         logger.info("Goodbye.")
 
     app = FastAPI(
@@ -137,6 +163,10 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # ── Register API routers ──
+    from plugins.web_ui.api.chat import router as chat_router
+    app.include_router(chat_router)
 
     # ── Health check ──
 
