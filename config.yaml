@@ -24,9 +24,12 @@ redis:
   ttl_seconds: 3600
 
 vector_store:
-  backend: "chromadb"
+  backend: "chromadb"  # chromadb | pgvector | milvus
   chromadb:
     path: "./chroma_data"
+  pgvector:
+    connection_string: "${PGVECTOR_URL}"
+    table_prefix: "vec_"
   milvus:
     host: "localhost"
     port: 19530
@@ -51,7 +54,7 @@ llm:
 
 agent:
   max_turns: 50
-  context_compression_threshold: 0.75  # 75% window usage
+  context_compression_threshold: 0.75
   model_routing:
     reasoning: "gpt-4o"
     coding: "claude-sonnet-4"
@@ -59,7 +62,7 @@ agent:
     embedding: "text-embedding-3-small"
 
 memory:
-  short_term_window: 50  # messages
+  short_term_window: 50
   long_term_backend: "builtin"
   consolidation_trigger: "session_end"
   importance_threshold: 0.3
@@ -71,7 +74,7 @@ rag:
   default_chunk_overlap: 0.1
   retrieval_top_k: 10
   rerank_top_k: 5
-  hybrid_alpha: 0.7  # embedding weight (1-alpha = BM25 weight)
+  hybrid_alpha: 0.7
 
 tool_market:
   sandbox_mode: "subprocess"
@@ -91,12 +94,54 @@ multi_agent:
   retry_attempts: 2
   retry_backoff: "exponential"
 
+security:
+  content_filter:
+    enabled: true
+    check_input: true
+    check_output: true
+    block_nsfw: true
+    block_pii: true
+  tool_approval:
+    enabled: true
+    auto_approve_whitelist: []
+    pending_timeout: 300
+    notify_webhook: ""
+  sandbox:
+    mode: "subprocess"   # subprocess | docker
+    docker_image: "ai-agent-sandbox:latest"
+    network_disabled: true
+    read_only_root: true
+    memory_limit: "512m"
+    cpu_limit: 1.0
+    timeout: 30
+  secret_manager:
+    backend: "env"       # env | vault | aws-secrets
+    encryption_key: "${SECRETS_ENCRYPTION_KEY}"
+  audit_log:
+    enabled: true
+    log_tool_calls: true
+    log_auth_events: true
+
+observability:
+  tracing:
+    enabled: false
+    exporter: "console"  # console | otlp
+    otlp_endpoint: "http://localhost:4317"
+    sample_rate: 1.0
+  metrics:
+    enabled: false
+    prometheus_port: 9090
+  health_check:
+    check_db: true
+    check_redis: true
+    check_llm: false
+
 analytics:
   enabled: true
   retention_days: 90
   budget_alerts:
-    daily: 50.0      # USD
-    monthly: 500.0   # USD
+    daily: 50.0
+    monthly: 500.0
 
 logging:
   level: "INFO"

@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    volumes:
+      - ../config.yaml:/home/agent/app/config.yaml:ro
+      - agent_data:/home/agent/app/data
+      - chroma_data:/home/agent/app/chroma_data
+      - agent_logs:/home/agent/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  # Optional: PostgreSQL (uncomment for production)
+  # postgres:
+  #   image: pgvector/pgvector:pg16
+  #   ports:
+  #     - "5432:5432"
+  #   environment:
+  #     POSTGRES_USER: agent
+  #     POSTGRES_PASSWORD: agent
+  #     POSTGRES_DB: agent_platform
+  #   volumes:
+  #     - pg_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U agent"]
+  #     interval: 10s
+  #     timeout: 3s
+  #     retries: 3
+
+volumes:
+  agent_data:
+  chroma_data:
+  agent_logs:
+  redis_data:
+  # pg_data:
