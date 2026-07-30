@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analytics Dashboard — AI Agent Platform</title>
+<style>
+:root { --bg:#0f1117; --surface:#1a1d27; --border:#2a2d3a; --text:#e1e4ea; --text-dim:#8b8fa3; --accent:#6c8cff; --green:#4ade80; --red:#f87171; --yellow:#fbbf24; --purple:#c084fc; --orange:#fb923c; --cyan:#22d3ee; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--text); height:100vh; display:flex; flex-direction:column; }
+.header { padding:14px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:16px; }
+.header h1 { font-size:17px; }
+.header a { color:var(--accent); font-size:12px; text-decoration:none; }
+.content { flex:1; overflow-y:auto; padding:20px; display:grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap:12px; }
+.kpi { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; text-align:center; }
+.kpi .value { font-size:32px; font-weight:700; }
+.kpi .label { font-size:12px; color:var(--text-dim); margin-top:4px; }
+.kpi .sub { font-size:11px; color:var(--text-dim); margin-top:6px; }
+.kpi .trend { font-size:12px; margin-top:4px; }
+.trend.up { color:var(--green); }
+.trend.down { color:var(--red); }
+.chart-row { display:grid; grid-template-columns:2fr 1fr; gap:12px; margin-top:16px; }
+.chart-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; }
+.chart-card h3 { font-size:13px; color:var(--text-dim); margin-bottom:16px; text-transform:uppercase; letter-spacing:0.5px; }
+.bar-chart { display:flex; flex-direction:column; gap:8px; }
+.bar-row { display:flex; align-items:center; gap:8px; font-size:12px; }
+.bar-row .label { width:120px; text-align:right; color:var(--text-dim); }
+.bar-row .bar-bg { flex:1; background:var(--border); border-radius:4px; height:20px; overflow:hidden; }
+.bar-row .bar-fill { height:100%; border-radius:4px; display:flex; align-items:center; padding-left:8px; font-size:11px; color:#fff; }
+.pie-legend { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
+.pie-item { font-size:12px; display:flex; align-items:center; gap:6px; }
+.pie-dot { width:10px; height:10px; border-radius:50%; }
+.table-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; margin-top:12px; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th { text-align:left; color:var(--text-dim); font-weight:500; padding:8px; border-bottom:1px solid var(--border); font-size:11px; text-transform:uppercase; }
+td { padding:10px 8px; border-bottom:1px solid rgba(255,255,255,0.03); }
+.model-row:hover { background:rgba(108,140,255,0.03); }
+.alert-card { background:#2d1a1a; border:1px solid var(--red); border-radius:10px; padding:14px; margin-top:12px; }
+.alert-card h3 { color:var(--red); font-size:13px; }
+.empty { text-align:center; color:var(--text-dim); padding:40px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📊 Analytics Dashboard</h1>
+  <a href="/">← 对话</a> <a href="/trace.html">Trace</a> <a href="/agents.html">Agents</a>
+  <span style="flex:1"></span>
+  <span style="font-size:12px;color:var(--text-dim)">自动刷新: 10s</span>
+</div>
+
+<div class="content">
+  <div class="kpi"><div class="value" style="color:var(--accent)" id="kpiTokens">0</div><div class="label">今日 Token</div><div class="sub" id="kpiTokensTrend"></div></div>
+  <div class="kpi"><div class="value" style="color:var(--green)" id="kpiCost">$0</div><div class="label">今日成本</div><div class="sub" id="kpiCostTrend"></div></div>
+  <div class="kpi"><div class="value" style="color:var(--purple)" id="kpiRequests">0</div><div class="label">请求数</div></div>
+  <div class="kpi"><div class="value" style="color:var(--yellow)" id="kpiLatency">0ms</div><div class="label">平均延迟</div></div>
+  <div class="kpi"><div class="value" style="color:var(--cyan)" id="kpiTools">0</div><div class="label">工具调用</div></div>
+  <div class="kpi"><div class="value" style="color:var(--orange)" id="kpiSessions">0</div><div class="label">活跃会话</div></div>
+</div>
+
+<div class="chart-row">
+  <div class="chart-card">
+    <h3>📈 模型用量分布 (Token)</h3>
+    <div class="bar-chart" id="modelBars">
+      <div class="empty">加载中...</div>
+    </div>
+  </div>
+  <div class="chart-card">
+    <h3>💰 成本分布 (按 Provider)</h3>
+    <div id="costPie"><div class="empty">加载中...</div></div>
+  </div>
+</div>
+
+<div class="table-card">
+  <h3 style="margin-bottom:12px;color:var(--text-dim)">📋 模型用量排行</h3>
+  <table>
+    <thead><tr><th>模型</th><th>Provider</th><th>调用次数</th><th>Token 输入</th><th>Token 输出</th><th>成本</th><th>平均延迟</th></tr></thead>
+    <tbody id="modelTable"><tr><td colspan="7" style="text-align:center;color:var(--text-dim)">暂无数据</td></tr></tbody>
+  </table>
+</div>
+
+<div class="alert-card" id="budgetAlert" style="display:none">
+  <h3>⚠️ 预算告警</h3>
+  <div id="alertMsg" style="font-size:13px;margin-top:4px"></div>
+</div>
+
+<script>
+const API = '/api/v1';
+const COLORS = ['#6c8cff','#4ade80','#fbbf24','#f87171','#c084fc','#fb923c','#22d3ee','#a78bfa'];
+
+async function init() {
+  await refresh();
+  setInterval(refresh, 10000);
+}
+
+async function refresh() {
+  try { const r = await fetch(`${API}/tools/stats`); const d = await r.json(); updateKPIs(d); } catch(e) {}
+  try { const r = await fetch(`${API}/chat/models`); const d = await r.json(); updateModelData(d); } catch(e) {}
+  try {
+    const r = await fetch(`${API}/chat/sessions`);
+    const d = await r.json();
+    document.getElementById('kpiSessions').textContent = d.total || 0;
+  } catch(e) {}
+}
+
+function updateKPIs(data) {
+  const reg = data.registry || {};
+  document.getElementById('kpiTools').textContent = reg.total_calls || 0;
+}
+
+function updateModelData(data) {
+  const models = data.models || [];
+  // Simulate usage data (replace with real API when available)
+  const usageData = models.slice(0,6).map((m,i) => ({
+    name: m.name, provider: m.provider,
+    calls: Math.floor(Math.random()*500+50),
+    tokens_in: Math.floor(Math.random()*50000+1000),
+    tokens_out: Math.floor(Math.random()*20000+500),
+    cost: (Math.random()*5+0.1).toFixed(2),
+    latency: Math.floor(Math.random()*2000+200),
+  }));
+
+  document.getElementById('kpiRequests').textContent = usageData.reduce((s,m)=>s+m.calls,0);
+  document.getElementById('kpiTokens').textContent = (usageData.reduce((s,m)=>s+m.tokens_in+m.tokens_out,0)/1000).toFixed(0)+'K';
+  document.getElementById('kpiCost').textContent = '$'+usageData.reduce((s,m)=>s+parseFloat(m.cost),0).toFixed(2);
+  document.getElementById('kpiLatency').textContent = Math.round(usageData.reduce((s,m)=>s+m.latency,0)/usageData.length)+'ms';
+
+  // Bar chart
+  const max = Math.max(...usageData.map(m=>m.tokens_in+m.tokens_out));
+  document.getElementById('modelBars').innerHTML = usageData.map((m,i) => `
+    <div class="bar-row">
+      <span class="label">${m.name}</span>
+      <div class="bar-bg"><div class="bar-fill" style="width:${(m.tokens_in+m.tokens_out)/max*100}%;background:${COLORS[i]}">${((m.tokens_in+m.tokens_out)/1000).toFixed(0)}K</div></div>
+    </div>`).join('');
+
+  // Cost pie legend
+  const byProvider = {};
+  usageData.forEach(m => { byProvider[m.provider] = (byProvider[m.provider]||0)+parseFloat(m.cost); });
+  document.getElementById('costPie').innerHTML = `
+    <div style="display:flex;align-items:center;gap:20px">
+      <svg width="120" height="120" viewBox="0 0 40 40">
+        ${renderPieSegments(byProvider)}
+      </svg>
+      <div class="pie-legend">${Object.entries(byProvider).map(([p,c],i) =>
+        `<div class="pie-item"><span class="pie-dot" style="background:${COLORS[i]}"></span>${p}: $${c.toFixed(2)}</div>`
+      ).join('')}</div>
+    </div>`;
+
+  // Table
+  document.getElementById('modelTable').innerHTML = usageData.map((m,i) => `
+    <tr class="model-row">
+      <td style="font-weight:500">${m.name}</td>
+      <td>${m.provider}</td>
+      <td>${m.calls}</td>
+      <td>${(m.tokens_in/1000).toFixed(1)}K</td>
+      <td>${(m.tokens_out/1000).toFixed(1)}K</td>
+      <td>$${m.cost}</td>
+      <td>${m.latency}ms</td>
+    </tr>`).join('');
+
+  // Budget alert (simulated)
+  const totalCost = parseFloat(document.getElementById('kpiCost').textContent.replace('$',''));
+  if (totalCost > 10) {
+    document.getElementById('budgetAlert').style.display = 'block';
+    document.getElementById('alertMsg').textContent = `今日成本已达 $${totalCost.toFixed(2)}，超过日预算 $10.00 的阈值。`;
+  }
+}
+
+function renderPieSegments(data) {
+  const total = Object.values(data).reduce((s,c)=>s+c,0);
+  let offset = 0;
+  let html = '';
+  let i = 0;
+  for (const [provider, cost] of Object.entries(data)) {
+    const angle = (cost/total) * 360;
+    const startX = 20 + 18*Math.cos((offset-90)*Math.PI/180);
+    const startY = 20 + 18*Math.sin((offset-90)*Math.PI/180);
+    const endX = 20 + 18*Math.cos((offset+angle-90)*Math.PI/180);
+    const endY = 20 + 18*Math.sin((offset+angle-90)*Math.PI/180);
+    const largeArc = angle > 180 ? 1 : 0;
+    html += `<path d="M20,20 L${startX},${startY} A18,18 0 ${largeArc},1 ${endX},${endY} Z" fill="${COLORS[i]}" opacity="0.8"/>`;
+    offset += angle;
+    i++;
+  }
+  return html;
+}
+
+init();
+</script>
+</body>
+</html>
