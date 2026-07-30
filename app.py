@@ -24,6 +24,7 @@ import uvicorn
 import yaml
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # ── Config loading ──
 
@@ -436,6 +437,15 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # ── Web UI entry ──
+    from fastapi.responses import FileResponse
+    @app.get("/")
+    async def web_ui():
+        static_index = Path("plugins/web_ui/static/index.html")
+        if static_index.exists():
+            return FileResponse(static_index)
+        return {"message": "Web UI not found. Open /docs for API documentation."}
 
     # ── Register API routers ──
     from plugins.web_ui.api.chat import router as chat_router
