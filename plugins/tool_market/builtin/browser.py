@@ -7,26 +7,69 @@ import structlog
 logger = structlog.get_logger()
 
 
-async def browser_navigate(url: str) -> str:
-    """浏览器导航到 URL 并返回页面内容"""
-    try:
-        from playwright.async_api import async_playwright
+async def _launch_browser(playwright):
+    """Use bundled Chromium when present, otherwise reuse a system browser."""
+    errors = []
+    for options in ({}, {"channel": "msedge"}, {"channel": "chrome"}):
+        try:
+            return await playwright.chromium.launch(headless=True, **options)
+        except Exception as error:
+            errors.append(str(error))
+    raise RuntimeError(
+        "No compatible Chromium browser is available. Run "
+        "'playwright install chromium' or install Microsoft Edge/Google Chrome. "
+        f"Last error: {errors[-1]}"
+    )
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            await page.goto(url, timeout=30000)
+
+async def extract_rendered_page(url: str, max_chars: int = 20000) -> dict:
+    """Render a page with Chromium and return its visible body text."""
+    from playwright.async_api import async_playwright
+
+    async with async_playwright() as p:
+        browser = await _launch_browser(p)
+        try:
+            page = await browser.new_page(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/126.0.0.0 Safari/537.36"
+                )
+            )
+            response = await page.goto(url, wait_until="domcontentloaded", timeout=12000)
+            await page.wait_for_timeout(500)
             title = await page.title()
-            text = await page.inner_text("body")
+            text = await page.locator("body").inner_text(timeout=3000)
+            text = "\n".join(line.strip() for line in text.splitlines() if line.strip())
+            truncated = len(text) > max_chars
+            if truncated:
+                text = text[:max_chars] + "..."
+            return {
+                "url": page.url,
+                "title": title or page.url,
+                "content": text,
+                "content_length": len(text),
+                "truncated": truncated,
+                "status_code": response.status if response else None,
+                "extraction_method": "browser",
+            }
+        finally:
             await browser.close()
 
-            if len(text) > 10000:
-                text = text[:10000] + "..."
 
-            return json.dumps({"url": url, "title": title, "content": text}, ensure_ascii=False)
+async def browser_navigate(url: str, max_chars: int = 20000) -> str:
+    """浏览器导航到 URL 并返回页面内容"""
+    try:
+        result = await extract_rendered_page(url, max_chars=max_chars)
+        return json.dumps(result, ensure_ascii=False)
 
     except ImportError:
-        return json.dumps({"error": "Playwright not installed. Run: pip install playwright && playwright install chromium"})
+        return json.dumps({
+            "error": (
+                "Playwright not installed. Run: pip install playwright "
+                "&& playwright install chromium"
+            )
+        })
     except Exception as e:
         logger.warning("Browser navigate failed", url=url, error=str(e))
         return json.dumps({"error": str(e), "url": url})

@@ -1,5 +1,9 @@
 """内置工具: web_search — 网络搜索 (DuckDuckGo / Google / Bing)"""
 
+import json
+import re
+from urllib.parse import urlparse
+
 import structlog
 
 logger = structlog.get_logger()
@@ -7,8 +11,6 @@ logger = structlog.get_logger()
 
 async def web_search(query: str, engine: str = "duckduckgo", limit: int = 5) -> str:
     """搜索网络"""
-    import json
-
     if engine == "duckduckgo":
         return await _search_duckduckgo(query, limit)
     else:
@@ -17,8 +19,6 @@ async def web_search(query: str, engine: str = "duckduckgo", limit: int = 5) -> 
 
 async def _search_duckduckgo(query: str, limit: int = 5) -> str:
     """DuckDuckGo 搜索 (无 API Key 需要)"""
-    import json
-
     try:
         import httpx
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -56,33 +56,142 @@ async def _search_duckduckgo(query: str, limit: int = 5) -> str:
         return json.dumps({"error": str(e), "query": query}, ensure_ascii=False)
 
 
-async def web_extract(url: str) -> str:
-    """提取网页内容"""
-    import json
+_REQUEST_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/126.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+}
+_JS_SHELL_MARKERS = (
+    "enable javascript",
+    "please enable javascript",
+    "you need to enable javascript",
+    "javascript is required",
+)
 
+
+def _validate_web_url(url: str) -> str:
+    normalized = url.strip()
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("url must be a valid HTTP(S) URL")
+    return normalized
+
+
+def _normalize_text(text: str) -> str:
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines()]
+    return "\n".join(line for line in lines if line)
+
+
+def _extract_html(html: str, url: str, max_chars: int) -> dict:
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    title_tag = soup.find("title")
+    title = title_tag.get_text(" ", strip=True) if title_tag else url
+
+    ignored_tags = [
+        "script", "style", "noscript", "template", "svg", "canvas",
+        "nav", "footer", "header", "aside", "form",
+    ]
+    for tag in soup(ignored_tags):
+        tag.decompose()
+
+    candidates = [
+        soup.find("article"),
+        soup.find("main"),
+        soup.find(attrs={"role": "main"}),
+        soup.body,
+    ]
+    texts = [_normalize_text(node.get_text("\n", strip=True)) for node in candidates if node]
+    text = max(texts, key=len, default="")
+    truncated = len(text) > max_chars
+    if truncated:
+        text = text[:max_chars] + "..."
+    return {
+        "url": url,
+        "title": title,
+        "content": text,
+        "content_length": len(text),
+        "truncated": truncated,
+        "extraction_method": "http",
+    }
+
+
+async def _fetch_static(url: str, max_chars: int) -> dict:
+    import httpx
+
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+        response = await client.get(url, headers=_REQUEST_HEADERS)
+        response.raise_for_status()
+        content_type = response.headers.get("content-type", "").lower()
+        if "html" in content_type or not content_type:
+            result = _extract_html(response.text, str(response.url), max_chars)
+        elif "text/" in content_type or "json" in content_type:
+            text = _normalize_text(response.text)
+            truncated = len(text) > max_chars
+            result = {
+                "url": str(response.url),
+                "title": str(response.url),
+                "content": text[:max_chars] + ("..." if truncated else ""),
+                "content_length": min(len(text), max_chars),
+                "truncated": truncated,
+                "extraction_method": "http",
+            }
+        else:
+            raise ValueError(f"unsupported content type: {content_type or 'unknown'}")
+        result["status_code"] = response.status_code
+        return result
+
+
+def _needs_browser(result: dict) -> bool:
+    content = result.get("content", "")
+    lowered = content.lower()
+    return len(content) < 200 or any(marker in lowered for marker in _JS_SHELL_MARKERS)
+
+
+async def web_extract(url: str, render_js: bool = False, max_chars: int = 20000) -> str:
+    """提取网页正文；静态内容不足时自动使用浏览器渲染。"""
     try:
-        import httpx
-        from bs4 import BeautifulSoup
+        url = _validate_web_url(url)
+        max_chars = max(1000, min(int(max_chars), 50000))
+    except (TypeError, ValueError) as error:
+        return json.dumps({"error": str(error), "url": url}, ensure_ascii=False)
 
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"User-Agent": "ai-agent-platform/0.1"})
-            resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, "html.parser")
+    static_result = None
+    static_error = None
+    try:
+        static_result = await _fetch_static(url, max_chars)
+    except ImportError as error:
+        return json.dumps(
+            {"error": f"Dependency missing: {error}", "url": url},
+            ensure_ascii=False,
+        )
+    except Exception as error:
+        static_error = str(error)
 
-            # 提取主要文本
-            for tag in soup(["script", "style", "nav", "footer", "header"]):
-                tag.decompose()
+    if render_js or static_result is None or _needs_browser(static_result):
+        try:
+            from plugins.tool_market.builtin.browser import extract_rendered_page
 
-            text = soup.get_text(separator="\n", strip=True)
-            # 截断
-            if len(text) > 5000:
-                text = text[:5000] + "..."
+            rendered = await extract_rendered_page(url, max_chars=max_chars)
+            if rendered.get("content") or static_result is None:
+                return json.dumps(rendered, ensure_ascii=False)
+        except Exception as error:
+            logger.info("Rendered web extraction unavailable", url=url, error=str(error))
+            if static_result is None:
+                return json.dumps(
+                    {
+                        "error": static_error or str(error),
+                        "browser_error": str(error),
+                        "hint": "Run 'playwright install chromium' to extract JavaScript-rendered pages.",
+                        "url": url,
+                    },
+                    ensure_ascii=False,
+                )
+            static_result["browser_fallback_error"] = str(error)
 
-            title = soup.title.string if soup.title else url
-
-            return json.dumps({"url": url, "title": title, "content": text}, ensure_ascii=False)
-
-    except ImportError as e:
-        return json.dumps({"error": f"Dependency missing: {e}"}, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": str(e), "url": url}, ensure_ascii=False)
+    return json.dumps(static_result, ensure_ascii=False)
