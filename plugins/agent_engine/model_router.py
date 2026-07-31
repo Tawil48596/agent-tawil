@@ -144,6 +144,34 @@ class ModelRouter:
     def _register_model(self, info: ModelInfo):
         self._models[info.name] = info
 
+    @staticmethod
+    def _has_usable_key(provider: dict[str, Any]) -> bool:
+        api_key = str(provider.get("api_key", "")).strip()
+        return bool(api_key) and not (api_key.startswith("${") and api_key.endswith("}"))
+
+    def update_provider(self, name: str, *, api_key: str, base_url: str) -> None:
+        """Update provider credentials for the running process."""
+        self._providers[name] = {
+            "api_key": api_key.strip(),
+            "base_url": base_url.strip(),
+        }
+
+    def remove_provider(self, name: str) -> None:
+        """Remove runtime credentials without exposing their previous value."""
+        self._providers.pop(name, None)
+
+    def provider_status(self) -> list[dict[str, Any]]:
+        """Return non-sensitive provider state for the settings UI."""
+        names = sorted(set(self._providers) | {model.provider for model in self._models.values()})
+        return [
+            {
+                "name": name,
+                "base_url": self._providers.get(name, {}).get("base_url", ""),
+                "configured": self._has_usable_key(self._providers.get(name, {})),
+            }
+            for name in names
+        ]
+
     # ── Public API ──
 
     def list_models(self) -> list[dict[str, Any]]:
@@ -158,7 +186,7 @@ class ModelRouter:
                 "cost_per_1k_input": info.cost_per_1k_input,
                 "cost_per_1k_output": info.cost_per_1k_output,
                 "tags": sorted(info.tags),
-                "available": info.provider in self._providers,
+                "available": self._has_usable_key(self._providers.get(info.provider, {})),
             }
             for info in self._models.values()
         ]
@@ -167,7 +195,7 @@ class ModelRouter:
         """列出当前可用（已配置 API Key）的模型名"""
         return [
             name for name, info in self._models.items()
-            if info.provider in self._providers
+            if self._has_usable_key(self._providers.get(info.provider, {}))
         ]
 
     def route(self, request: RouteRequest) -> RouteResult:
@@ -182,7 +210,7 @@ class ModelRouter:
         # 1. 用户显式覆盖（per-message 切换）
         if request.override_model:
             model_info = self._models.get(request.override_model)
-            if model_info and model_info.provider in self._providers:
+            if model_info and self._has_usable_key(self._providers.get(model_info.provider, {})):
                 return self._build_result(model_info, "override")
             logger.warning("Override model not available", model=request.override_model)
 
@@ -206,12 +234,12 @@ class ModelRouter:
             model_name = self._fast_model
 
         model_info = self._models.get(model_name)
-        if model_info and model_info.provider in self._providers:
+        if model_info and self._has_usable_key(self._providers.get(model_info.provider, {})):
             return self._build_result(model_info, "task")
 
         # 6. 降级链
         for provider_name in self._fallback_chain:
-            if provider_name in self._providers:
+            if self._has_usable_key(self._providers.get(provider_name, {})):
                 fallback_model = self._find_model_by_provider(request.task_type, provider_name)
                 if fallback_model:
                     model_info = self._models[fallback_model]
@@ -242,18 +270,18 @@ class ModelRouter:
     def _find_model_by_provider(self, task_type: TaskType, provider: str) -> Optional[str]:
         """在指定 Provider 下找适合任务的模型"""
         for name, info in self._models.items():
-            if info.provider == provider and provider in self._providers:
+            if info.provider == provider and self._has_usable_key(self._providers.get(provider, {})):
                 # 检查标签匹配
                 if task_type.value in info.tags:
                     return name
         # 退而求其次
         for name, info in self._models.items():
-            if info.provider == provider and provider in self._providers:
+            if info.provider == provider and self._has_usable_key(self._providers.get(provider, {})):
                 return name
         return None
 
     def _find_vision_model(self) -> Optional[str]:
         for name, info in self._models.items():
-            if info.supports_vision and info.provider in self._providers:
+            if info.supports_vision and self._has_usable_key(self._providers.get(info.provider, {})):
                 return name
         return None
