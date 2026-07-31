@@ -19,8 +19,11 @@ export function ChatHeader() {
   const error = useChatStore((s) => s.error);
   const messages = useChatStore((s) => s.messages);
   const loadSessions = useChatStore((s) => s.loadSessions);
+  const lastUsage = useChatStore((s) => s.lastUsage);
+  const sessionUsage = useChatStore((s) => s.sessionUsage);
   const navigate = useNavigate();
   const [forking, setForking] = useState(false);
+  const formatTokens = (value = 0) => value >= 1000 ? `${(value / 1000).toFixed(1)}K` : String(value);
 
   const forkSession = async () => {
     if (!activeId || messages.length === 0 || forking) return;
@@ -84,7 +87,24 @@ export function ChatHeader() {
         className="text-xs text-[#9ca9c9] hover:text-white flex items-center gap-1 px-3 py-2 rounded-lg border border-white/10 hover:bg-white/5 transition disabled:opacity-40 disabled:cursor-not-allowed">
         <GitBranch size={14} /> {forking ? "创建中…" : "分支"}
       </button>
-      <span className="text-xs text-[#8f9dbc] ml-auto">
+      <div
+        className="ml-auto hidden xl:flex items-center gap-2 rounded-lg border border-white/10 bg-[#10182a] px-3 py-1.5 text-[11px] text-[#9cacca]"
+        title={sessionUsage ? [
+          `请求：${sessionUsage.requests}`,
+          `输入：${sessionUsage.input_tokens}`,
+          `缓存命中：${sessionUsage.cached_input_tokens}`,
+          `缓存写入：${sessionUsage.cache_write_input_tokens}`,
+          `输出：${sessionUsage.output_tokens}`,
+          `推理：${sessionUsage.reasoning_tokens}`,
+          `总计：${sessionUsage.total_tokens}`,
+          `缓存命中率：${((sessionUsage.cache_hit_rate || 0) * 100).toFixed(1)}%`,
+        ].join("\n") : "发送消息后显示 Token 用量"}
+      >
+        <span>本轮 <b className="text-[#dce5ff]">{formatTokens(lastUsage?.total_tokens)}</b></span>
+        <span>缓存 <b className="text-[#8ff0c4]">{formatTokens(lastUsage?.cached_input_tokens)}</b></span>
+        <span>会话 <b className="text-[#aebfff]">{formatTokens(sessionUsage?.total_tokens)}</b></span>
+      </div>
+      <span className="text-xs text-[#8f9dbc]">
         {error ? <span className="text-[#f87171] mr-3 cursor-pointer" onClick={() => useChatStore.getState().clearError()} title="点击清除">{error.slice(0, 40)}</span> : null}
         会话: {activeId?.slice(0, 8)}
       </span>

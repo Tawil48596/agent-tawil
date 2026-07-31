@@ -102,6 +102,7 @@ class AgentEngine:
 
         turns = 0
         consecutive_failures = 0
+        total_usage = self._empty_usage()
 
         while turns < self.max_turns:
             # 上下文压缩检查
@@ -115,23 +116,30 @@ class AgentEngine:
                 )
                 response = await acompletion(
                     stream=True,
+                    stream_options={"include_usage": True},
                     **completion_kwargs,
                 )
 
-                # 收集流式响应
                 full_text = ""
                 tool_calls_buffer: dict[int, dict] = {}
-                current_event_type = None
+                finish_reason = None
+                turn_usage = self._empty_usage()
 
                 async for chunk in response:
-                    delta = chunk.choices[0].delta
+                    chunk_usage = self._normalize_usage(getattr(chunk, "usage", None))
+                    if chunk_usage["requests"]:
+                        turn_usage = chunk_usage
 
-                    # 文本 token
+                    choices = getattr(chunk, "choices", None) or []
+                    if not choices:
+                        continue
+                    choice = choices[0]
+                    delta = choice.delta
+
                     if delta.content:
                         full_text += delta.content
                         yield {"type": "text", "content": delta.content}
 
-                    # 工具调用 token (流式累积)
                     if delta.tool_calls:
                         for tc in delta.tool_calls:
                             idx = tc.index
@@ -148,53 +156,51 @@ class AgentEngine:
                                 if tc.function.arguments:
                                     tool_calls_buffer[idx]["function"]["arguments"] += tc.function.arguments
 
-                    # 结束
-                    if chunk.choices[0].finish_reason == "stop":
-                        if full_text:
+                    if choice.finish_reason:
+                        finish_reason = choice.finish_reason
+
+                total_usage = self._add_usage(total_usage, turn_usage)
+
+                if finish_reason == "stop":
+                    yield {
+                        "type": "done",
+                        "content": full_text,
+                        "stop_reason": "complete",
+                        "model": route_result.model,
+                        "provider": route_result.provider,
+                        "usage": total_usage,
+                    }
+                    return
+
+                if finish_reason == "tool_calls":
+                    tool_calls_list = list(tool_calls_buffer.values())
+                    yield {"type": "tool_calls", "calls": tool_calls_list, "status": "pending"}
+
+                    results = await self.tool_dispatcher.execute_parallel(tool_calls_list)
+                    yield {"type": "tool_results", "results": results}
+                    messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": tool_calls_list,
+                    })
+                    for i, result in enumerate(results):
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_calls_list[i].get("id", ""),
+                            "content": result.get("output", ""),
+                        })
+
+                    if all(r.get("error") for r in results):
+                        consecutive_failures += 1
+                        if consecutive_failures > 3:
                             yield {
-                                "type": "done",
-                                "content": full_text,
-                                "stop_reason": "complete",
-                                "model": route_result.model,
-                                "provider": route_result.provider,
+                                "type": "error",
+                                "message": "工具调用连续失败。",
+                                "code": "tool_error",
                             }
-                        return
-
-                    elif chunk.choices[0].finish_reason == "tool_calls":
-                        # 执行工具调用
-                        tool_calls_list = list(tool_calls_buffer.values())
-                        yield {"type": "tool_calls", "calls": tool_calls_list, "status": "pending"}
-
-                        results = await self.tool_dispatcher.execute_parallel(tool_calls_list)
-                        yield {"type": "tool_results", "results": results}
-
-                        # 将工具结果追加到消息
-                        assistant_msg = {
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": tool_calls_list,
-                        }
-                        messages.append(assistant_msg)
-
-                        for i, result in enumerate(results):
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_calls_list[i].get("id", ""),
-                                "content": result.get("output", ""),
-                            })
-
-                        if all(r.get("error") for r in results):
-                            consecutive_failures += 1
-                            if consecutive_failures > 3:
-                                yield {
-                                    "type": "error",
-                                    "message": "工具调用连续失败。",
-                                    "code": "tool_error",
-                                }
-                                return
-                        else:
-                            consecutive_failures = 0
-                        break  # 回到 while 循环继续推理
+                            return
+                    else:
+                        consecutive_failures = 0
 
             except Exception as e:
                 logger.error("LLM error", error=str(e))
@@ -252,11 +258,7 @@ class AgentEngine:
             finish_reason = choice.finish_reason
 
             if finish_reason == "stop" or not choice.message.tool_calls:
-                usage = {
-                    "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
-                    "completion_tokens": response.usage.completion_tokens if response.usage else 0,
-                    "total_tokens": response.usage.total_tokens if response.usage else 0,
-                }
+                usage = self._normalize_usage(getattr(response, "usage", None))
                 return EngineResponse(
                     text=choice.message.content or "",
                     stop_reason="complete",
@@ -354,6 +356,73 @@ class AgentEngine:
         if route.supports_reasoning_effort and reasoning_effort in {"low", "medium", "high"}:
             kwargs["reasoning_effort"] = reasoning_effort
         return kwargs
+
+    @staticmethod
+    def _usage_value(source: Any, *names: str) -> int:
+        if source is None:
+            return 0
+        for name in names:
+            value = source.get(name) if isinstance(source, dict) else getattr(source, name, None)
+            if value is not None:
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    continue
+        return 0
+
+    @classmethod
+    def _normalize_usage(cls, usage: Any) -> dict[str, int]:
+        if usage is None:
+            return cls._empty_usage()
+        input_details = (
+            usage.get("prompt_tokens_details") or usage.get("input_tokens_details")
+            if isinstance(usage, dict)
+            else getattr(usage, "prompt_tokens_details", None)
+            or getattr(usage, "input_tokens_details", None)
+        )
+        output_details = (
+            usage.get("completion_tokens_details") or usage.get("output_tokens_details")
+            if isinstance(usage, dict)
+            else getattr(usage, "completion_tokens_details", None)
+            or getattr(usage, "output_tokens_details", None)
+        )
+        input_tokens = cls._usage_value(usage, "prompt_tokens", "input_tokens")
+        output_tokens = cls._usage_value(usage, "completion_tokens", "output_tokens")
+        total_tokens = cls._usage_value(usage, "total_tokens") or input_tokens + output_tokens
+        return {
+            "input_tokens": input_tokens,
+            "cached_input_tokens": (
+                cls._usage_value(input_details, "cached_tokens", "cache_read_tokens")
+                or cls._usage_value(usage, "cache_read_input_tokens", "cached_input_tokens")
+            ),
+            "cache_write_input_tokens": (
+                cls._usage_value(input_details, "cache_write_tokens", "cache_creation_tokens")
+                or cls._usage_value(usage, "cache_creation_input_tokens")
+            ),
+            "output_tokens": output_tokens,
+            "reasoning_tokens": cls._usage_value(output_details, "reasoning_tokens"),
+            "total_tokens": total_tokens,
+            "requests": 1,
+        }
+
+    @staticmethod
+    def _empty_usage() -> dict[str, int]:
+        return {
+            "input_tokens": 0,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 0,
+            "reasoning_tokens": 0,
+            "total_tokens": 0,
+            "requests": 0,
+        }
+
+    @classmethod
+    def _add_usage(cls, total: dict[str, int], addition: dict[str, int]) -> dict[str, int]:
+        return {
+            key: total.get(key, 0) + addition.get(key, 0)
+            for key in cls._empty_usage()
+        }
 
     @staticmethod
     def _format_tools(tools: Optional[list[dict]]) -> Optional[list[dict]]:

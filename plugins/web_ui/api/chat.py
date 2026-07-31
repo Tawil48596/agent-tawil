@@ -39,6 +39,45 @@ class SessionUpdate(BaseModel):
 
 _sessions: dict[str, dict] = {}
 _messages: dict[str, list[dict]] = {}
+_session_usage: dict[str, dict[str, int]] = {}
+
+
+def _empty_usage() -> dict[str, int]:
+    return {
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 0,
+        "reasoning_tokens": 0,
+        "total_tokens": 0,
+        "requests": 0,
+    }
+
+
+def _add_session_usage(session_id: str, usage: dict) -> dict[str, int | float]:
+    total = _session_usage.setdefault(session_id, _empty_usage())
+    for key in _empty_usage():
+        total[key] += int(usage.get(key, 0) or 0)
+    input_tokens = total["input_tokens"]
+    return {
+        **total,
+        "cache_hit_rate": (
+            round(total["cached_input_tokens"] / input_tokens, 4)
+            if input_tokens else 0.0
+        ),
+    }
+
+
+def _get_session_usage(session_id: str) -> dict[str, int | float]:
+    total = _session_usage.get(session_id, _empty_usage())
+    input_tokens = total["input_tokens"]
+    return {
+        **total,
+        "cache_hit_rate": (
+            round(total["cached_input_tokens"] / input_tokens, 4)
+            if input_tokens else 0.0
+        ),
+    }
 
 
 def _append_user_message(session_id: str, content: str, retry: bool) -> list[dict]:
@@ -69,6 +108,7 @@ async def create_session(body: SessionCreate):
     }
     _sessions[sid] = session
     _messages[sid] = []
+    _session_usage[sid] = _empty_usage()
     return session
 
 
@@ -101,6 +141,7 @@ async def update_session(session_id: str, body: SessionUpdate):
 async def delete_session(session_id: str):
     _sessions.pop(session_id, None)
     _messages.pop(session_id, None)
+    _session_usage.pop(session_id, None)
     return {"ok": True}
 
 
@@ -160,10 +201,15 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
                 reasoning_effort=None if body.reasoning_effort == "auto" else body.reasoning_effort,
             ):
                 if event.get("type") == "done" and event.get("content"):
+                    usage = event.get("usage") or {}
+                    session_usage = _add_session_usage(session_id, usage)
+                    event["session_usage"] = session_usage
                     _messages.setdefault(session_id, []).append({
                         "role": "assistant",
                         "content": event["content"],
                         "model": event.get("model"),
+                        "provider": event.get("provider"),
+                        "usage": usage,
                     })
                 yield {"event": "message", "data": json.dumps(event, ensure_ascii=False, default=str)}
 
@@ -179,6 +225,7 @@ async def get_messages(session_id: str, limit: int = 100, offset: int = 0):
     return {
         "items": msgs[offset:offset + limit],
         "total": len(msgs),
+        "usage": _get_session_usage(session_id),
     }
 
 
