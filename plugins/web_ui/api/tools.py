@@ -73,6 +73,19 @@ async def update_tool(name: str, request: Request):
     return result
 
 
+@router.get("/packages")
+async def package_status(request: Request):
+    return {"packages": request.app.state.tool_package_store.status()}
+
+
+@router.post("/packages/{name}/rollback")
+async def rollback_package(name: str, request: Request, version: str = ""):
+    try:
+        return request.app.state.tool_package_store.rollback(name, version or None)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 # ── Stats ──
 
 

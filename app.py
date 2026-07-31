@@ -255,14 +255,20 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         # ── Phase 4: 工具市场 ──
         from plugins.tool_market.registry import ToolRegistry, ToolDef
         from plugins.tool_market.marketplace import Marketplace, MarketplaceEntry
+        from plugins.tool_market.package_store import ToolPackageStore
         from plugins.generative_ui.schema_mapper import SchemaMapper
 
         tool_registry = ToolRegistry()
         marketplace = Marketplace(tool_registry)
+        package_store = ToolPackageStore(
+            config.get("tool_market", {}).get("package_path", "data/tool_packages"),
+            os.environ.get("TOOL_PACKAGE_SIGNING_KEY", ""),
+        )
         schema_mapper = SchemaMapper()
 
         app.state.tool_registry = tool_registry
         app.state.marketplace = marketplace
+        app.state.tool_package_store = package_store
         app.state.schema_mapper = schema_mapper
 
         # 注册内置工具
