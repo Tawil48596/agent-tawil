@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul
 cd /d "%~dp0"
 title AI Agent Platform 0.1.1
@@ -7,13 +7,13 @@ set "PYTHON_EXE=%CD%\.venv\Scripts\python.exe"
 if exist "%PYTHON_EXE%" goto run
 
 where py >nul 2>nul
-if %ERRORLEVEL% EQU 0 (
+if not errorlevel 1 (
   set "PYTHON_EXE=py"
   goto run
 )
 
 where python >nul 2>nul
-if %ERRORLEVEL% EQU 0 (
+if not errorlevel 1 (
   set "PYTHON_EXE=python"
   goto run
 )
