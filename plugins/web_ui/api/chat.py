@@ -23,6 +23,7 @@ class ChatRequest(BaseModel):
     prefer_provider: Optional[str] = None
     tools: Optional[list[str]] = None
     reasoning_effort: Literal["auto", "low", "medium", "high"] = "auto"
+    retry: bool = False
 
 
 class SessionCreate(BaseModel):
@@ -38,6 +39,19 @@ class SessionUpdate(BaseModel):
 
 _sessions: dict[str, dict] = {}
 _messages: dict[str, list[dict]] = {}
+
+
+def _append_user_message(session_id: str, content: str, retry: bool) -> list[dict]:
+    session_messages = _messages.setdefault(session_id, [])
+    is_same_pending_message = (
+        retry
+        and bool(session_messages)
+        and session_messages[-1].get("role") == "user"
+        and session_messages[-1].get("content") == content
+    )
+    if not is_same_pending_message:
+        session_messages.append({"role": "user", "content": content})
+    return session_messages
 
 
 # ── Session endpoints ──
@@ -113,8 +127,7 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
         raise HTTPException(503, "Agent engine not initialized. Check plugin loading.")
 
     async def event_stream():
-        user_msg = {"role": "user", "content": body.content}
-        _messages.setdefault(session_id, []).append(user_msg)
+        _append_user_message(session_id, body.content, body.retry)
 
         yield {"event": "message", "data": json.dumps({"type": "thinking", "content": "思考中..."}, ensure_ascii=False)}
 

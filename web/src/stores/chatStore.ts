@@ -2,6 +2,8 @@ import { create } from "zustand";
 import type { Session, Message, ModelInfo, ToolDef } from "@/types/chat";
 import { api } from "@/lib/api";
 
+let activeRequest: AbortController | null = null;
+
 interface ChatState {
   sessions: Session[];
   activeId: string | null;
@@ -14,13 +16,17 @@ interface ChatState {
   tools: ToolDef[];
   streaming: boolean;
   streamContent: string;
+  interrupted: boolean;
+  lastSentText: string;
   error: string | null;
   // Actions
   init: () => Promise<void>;
   createSession: () => Promise<string>;
   selectSession: (id: string) => Promise<void>;
   loadSessions: () => Promise<void>;
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, retry?: boolean) => Promise<void>;
+  stopStreaming: () => void;
+  retryLastMessage: () => Promise<void>;
   setModel: (m: string) => void;
   setTask: (t: string) => void;
   setReasoningEffort: (effort: string) => void;
@@ -40,6 +46,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   tools: [],
   streaming: false,
   streamContent: "",
+  interrupted: false,
+  lastSentText: "",
   error: null,
 
   init: async () => {
@@ -79,7 +87,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch {}
   },
 
-  sendMessage: async (text) => {
+  sendMessage: async (text, retry = false) => {
     let sid = get().activeId;
     if (!sid) {
       try {
@@ -94,14 +102,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
 
-    set({ error: null, streaming: true, streamContent: "" });
+    activeRequest?.abort();
+    const requestController = new AbortController();
+    activeRequest = requestController;
+    set({
+      error: null,
+      streaming: true,
+      streamContent: "",
+      interrupted: false,
+      lastSentText: text,
+    });
 
     // Add user message immediately
-    const userMsg: Message = {
-      id: Date.now(), session_id: sid, role: "user" as const,
-      content: text, created_at: new Date().toISOString(),
-    };
-    set((st) => ({ messages: [...st.messages, userMsg] }));
+    if (!retry) {
+      const userMsg: Message = {
+        id: Date.now(), session_id: sid, role: "user" as const,
+        content: text, created_at: new Date().toISOString(),
+      };
+      set((st) => ({ messages: [...st.messages, userMsg] }));
+    }
 
     let fullText = "";
     try {
@@ -111,6 +130,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         : [];
       const resp = await api.sendMessage(
         sid, text, model || undefined, task, reasoningEffort, enabledToolNames,
+        retry, requestController.signal,
       );
       if (!resp.ok) {
         const errText = await resp.text();
@@ -176,13 +196,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
         };
         set((st) => ({ messages: [...st.messages, asstMsg] }));
       }
+      set({ interrupted: false });
     } catch (e: any) {
+      if (e?.name === "AbortError") {
+        set({ interrupted: true, error: null });
+        return;
+      }
       const msg = e?.message || String(e);
       set({ error: msg.includes("Failed to fetch") ? "无法连接到服务器" : msg });
     } finally {
+      if (activeRequest === requestController) activeRequest = null;
       set({ streaming: false, streamContent: "" });
       get().loadSessions();
     }
+  },
+
+  stopStreaming: () => {
+    activeRequest?.abort();
+  },
+
+  retryLastMessage: async () => {
+    const text = get().lastSentText;
+    if (!text || get().streaming) return;
+    await get().sendMessage(text, true);
   },
 
   setModel: (m) => {
