@@ -1,27 +1,23 @@
 import { useState, useEffect } from "react";
-import { Settings as SettingsIcon, User, Cpu, Brain, Key, Save, Eye, EyeOff, Trash2, Plus, Globe, X } from "lucide-react";
+import { Settings as SettingsIcon, User, Cpu, Brain, Save, Eye, EyeOff, Trash2, Globe } from "lucide-react";
 import { useChatStore } from "@/stores/chatStore";
 
 interface ProviderConfig {
   name: string;
   apiKey: string;
   baseUrl: string;
+  configured: boolean;
 }
 
 const DEFAULT_PROVIDERS: ProviderConfig[] = [
-  { name: "openai", apiKey: "", baseUrl: "https://api.openai.com/v1" },
-  { name: "anthropic", apiKey: "", baseUrl: "https://api.anthropic.com" },
-  { name: "deepseek", apiKey: "", baseUrl: "https://api.deepseek.com/v1" },
+  { name: "openai", apiKey: "", baseUrl: "https://api.openai.com/v1", configured: false },
+  { name: "anthropic", apiKey: "", baseUrl: "https://api.anthropic.com", configured: false },
+  { name: "deepseek", apiKey: "", baseUrl: "https://api.deepseek.com/v1", configured: false },
 ];
 
 export function Settings() {
   const [tab, setTab] = useState("profile");
-  const [providers, setProviders] = useState<ProviderConfig[]>(() => {
-    try {
-      const saved = localStorage.getItem("ai-agent-providers");
-      return saved ? JSON.parse(saved) : DEFAULT_PROVIDERS;
-    } catch { return DEFAULT_PROVIDERS; }
-  });
+  const [providers, setProviders] = useState<ProviderConfig[]>(DEFAULT_PROVIDERS);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [editValues, setEditValues] = useState<Record<string, { key: string; url: string }>>({});
   const [memories, setMemories] = useState<any[]>([]);
@@ -30,16 +26,34 @@ export function Settings() {
   const model = useChatStore((s) => s.model);
   const models = useChatStore((s) => s.models);
   const setModel = useChatStore((s) => s.setModel);
-  const [newProvider, setNewProvider] = useState({ name: "", baseUrl: "" });
-  const [showAdd, setShowAdd] = useState(false);
+  const refreshChat = useChatStore((s) => s.init);
 
   useEffect(() => {
     fetch("/api/v1/memory").then(r => r.json()).then(d => setMemories(d.entries || [])).catch(() => {});
-    // Init edit values from saved
-    const ev: Record<string, { key: string; url: string }> = {};
-    providers.forEach(p => { ev[p.name] = { key: p.apiKey, url: p.baseUrl }; });
-    setEditValues(ev);
+    fetch("/api/v1/runtime/providers")
+      .then(async r => {
+        if (!r.ok) throw new Error(await r.text());
+        return r.json();
+      })
+      .then(data => {
+        const statuses = new Map((data.providers || []).map((p: any) => [p.name, p]));
+        setProviders(DEFAULT_PROVIDERS.map(provider => {
+          const status: any = statuses.get(provider.name);
+          return {
+            ...provider,
+            baseUrl: status?.base_url || provider.baseUrl,
+            configured: !!status?.configured,
+          };
+        }));
+      })
+      .catch((e) => setNotice(`无法读取服务端配置：${e.message}`));
   }, []);
+
+  useEffect(() => {
+    const ev: Record<string, { key: string; url: string }> = {};
+    providers.forEach(p => { ev[p.name] = { key: "", url: p.baseUrl }; });
+    setEditValues(ev);
+  }, [providers]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -59,33 +73,30 @@ export function Settings() {
     }));
   };
 
-  const saveProvider = (name: string) => {
-    setProviders(prev => prev.map(p =>
-      p.name === name ? { ...p, apiKey: editValues[name]?.key ?? p.apiKey, baseUrl: editValues[name]?.url ?? p.baseUrl } : p
-    ));
-    // Persist
-    const updated = providers.map(p =>
-      p.name === name ? { ...p, apiKey: editValues[name]?.key ?? p.apiKey, baseUrl: editValues[name]?.url ?? p.baseUrl } : p
-    );
-    localStorage.setItem("ai-agent-providers", JSON.stringify(updated));
-    setNotice(`${name} 已保存在当前浏览器。服务端调用仍需配置对应环境变量并重启。`);
-  };
-
-  const addProvider = () => {
-    if (!newProvider.name.trim() || !newProvider.baseUrl.trim()) return;
-    const p: ProviderConfig = { name: newProvider.name.trim().toLowerCase(), apiKey: "", baseUrl: newProvider.baseUrl.trim() };
-    const updated = [...providers, p];
-    setProviders(updated);
-    setEditValues(prev => ({ ...prev, [p.name]: { key: "", url: p.baseUrl } }));
-    localStorage.setItem("ai-agent-providers", JSON.stringify(updated));
-    setNewProvider({ name: "", baseUrl: "" });
-    setShowAdd(false);
-  };
-
-  const removeProvider = (name: string) => {
-    const updated = providers.filter(p => p.name !== name);
-    setProviders(updated);
-    localStorage.setItem("ai-agent-providers", JSON.stringify(updated));
+  const saveProvider = async (name: string) => {
+    const apiKey = editValues[name]?.key?.trim() || "";
+    const baseUrl = editValues[name]?.url?.trim() || "";
+    if (!apiKey) {
+      setNotice(`请输入 ${name} API Key`);
+      return;
+    }
+    setNotice("正在应用配置…");
+    try {
+      const response = await fetch(`/api/v1/runtime/providers/${name}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: apiKey, base_url: baseUrl }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      setProviders(prev => prev.map(p =>
+        p.name === name ? { ...p, configured: true, baseUrl } : p
+      ));
+      setEditValues(prev => ({ ...prev, [name]: { key: "", url: baseUrl } }));
+      await refreshChat();
+      setNotice(`${name} 已在当前服务中启用，无需重启。密钥不会返回浏览器或写入仓库。`);
+    } catch (e: any) {
+      setNotice(`配置失败：${e?.message || e}`);
+    }
   };
 
   return (
@@ -130,12 +141,11 @@ export function Settings() {
       {tab === "models" && (
         <div className="max-w-2xl space-y-4">
           <div className="rounded-lg border border-[#fbbf24]/30 bg-[#382b10] px-4 py-3 text-xs text-[#fde68a]">
-            浏览器保存不会修改正在运行的服务。要让模型真正可用，请在服务端配置 OPENAI_API_KEY、ANTHROPIC_API_KEY 或 DEEPSEEK_API_KEY 后重启。
+            在这里保存后会立即更新本机服务，无需重启。密钥仅保存在当前服务进程内存中，服务重启后需要重新填写。
           </div>
           {notice && <div className="rounded-lg border border-[#4ade80]/30 bg-[#12301d] px-4 py-2 text-xs text-[#86efac]">{notice}</div>}
           {providers.map((p) => {
-            const hasKey = !!(editValues[p.name]?.key ?? p.apiKey);
-            const hasUrl = !!(editValues[p.name]?.url ?? p.baseUrl);
+            const hasKey = p.configured;
             return (
               <div key={p.name} className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
                 <div className="flex items-center justify-between mb-3">
@@ -146,9 +156,6 @@ export function Settings() {
                     <span className={`text-[10px] px-2 py-0.5 rounded ${hasKey ? "bg-[#1a3a1a] text-[#4ade80]" : "bg-[#3d1515] text-[#f87171]"}`}>
                       {hasKey ? "已配置" : "未配置"}
                     </span>
-                    {!DEFAULT_PROVIDERS.find(d => d.name === p.name) && (
-                      <button onClick={() => removeProvider(p.name)} className="text-[#8b8fa3] hover:text-[#f87171]"><X size={14} /></button>
-                    )}
                   </div>
                 </div>
 
@@ -187,25 +194,6 @@ export function Settings() {
             );
           })}
 
-          {/* Add custom provider */}
-          {showAdd ? (
-            <div className="bg-[#1a1d27] border border-[#6c8cff] rounded-xl p-4">
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Plus size={16} /> 自定义 Provider</h3>
-              <input value={newProvider.name} onChange={(e) => setNewProvider(p => ({ ...p, name: e.target.value }))}
-                placeholder="Provider 名称 (如 ollama, groq)" className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-4 py-2.5 text-sm mb-2 outline-none focus:border-[#6c8cff]" />
-              <input value={newProvider.baseUrl} onChange={(e) => setNewProvider(p => ({ ...p, baseUrl: e.target.value }))}
-                placeholder="API URL (如 http://localhost:11434/v1)" className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-4 py-2.5 text-sm mb-3 outline-none focus:border-[#6c8cff]" />
-              <div className="flex gap-2">
-                <button onClick={addProvider} className="bg-[#6c8cff] text-white px-4 py-2 rounded-lg text-sm">添加</button>
-                <button onClick={() => setShowAdd(false)} className="bg-[#2a2d3a] text-[#e1e4ea] px-4 py-2 rounded-lg text-sm">取消</button>
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => setShowAdd(true)}
-              className="w-full border-2 border-dashed border-[#2a2d3a] rounded-xl p-4 text-sm text-[#8b8fa3] hover:border-[#6c8cff] hover:text-[#e1e4ea] flex items-center justify-center gap-2">
-              <Plus size={16} /> 添加自定义 Provider
-            </button>
-          )}
         </div>
       )}
 

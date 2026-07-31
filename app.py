@@ -463,6 +463,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     from plugins.web_ui.api.memory import router as memory_router
     from plugins.web_ui.api.analytics import router as analytics_api_router
     from plugins.web_ui.api.github import router as github_api_router
+    from plugins.web_ui.api.runtime_config import router as runtime_config_router
     app.include_router(chat_router)
     app.include_router(mcp_router)
     app.include_router(rag_router)
@@ -474,6 +475,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     app.include_router(memory_router)
     app.include_router(analytics_api_router)
     app.include_router(github_api_router)
+    app.include_router(runtime_config_router)
 
     # ── Health check (must be before SPA fallback) ──
 
