@@ -19,11 +19,16 @@ export const api = {
     taskType?: string,
     reasoningEffort?: string,
     tools?: string[],
+    retry?: boolean,
+    signal?: AbortSignal,
   ) =>
     fetch(`${API}/chat/sessions/${sessionId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content, model, task_type: taskType, reasoning_effort: reasoningEffort, tools }),
+      body: JSON.stringify({
+        content, model, task_type: taskType, reasoning_effort: reasoningEffort, tools, retry,
+      }),
       headers: { "Content-Type": "application/json" },
+      signal,
     }),
   getMessages: (sessionId: string) => fetchJSON(`${API}/chat/sessions/${sessionId}/messages`),
   getModels: () => fetchJSON(`${API}/chat/models`),
