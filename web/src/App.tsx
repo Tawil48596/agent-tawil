@@ -17,9 +17,9 @@ export default function App() {
   useEffect(() => { init(); }, []);
 
   return (
-    <div className="h-screen flex bg-[#0f1117] text-[#e1e4ea] overflow-hidden">
+    <div className="app-shell h-screen flex text-[#edf1ff] overflow-hidden">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 min-h-0">
         <Routes>
           <Route path="/" element={<ChatView />} />
           <Route path="/chat/:sessionId" element={<ChatView />} />
@@ -34,7 +34,7 @@ export default function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/settings/:section" element={<Settings />} />
         </Routes>
-      </div>
+      </main>
       <ContextPanel />
     </div>
   );

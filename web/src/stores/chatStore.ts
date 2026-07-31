@@ -100,7 +100,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     let fullText = "";
     try {
-      const resp = await api.sendMessage(sid, text, state.model || undefined, state.task);
+      const { model, task } = get();
+      const resp = await api.sendMessage(sid, text, model || undefined, task);
       if (!resp.ok) {
         const errText = await resp.text();
         throw new Error(`${resp.status}: ${errText}`);
