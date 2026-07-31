@@ -16,8 +16,14 @@ export const api = {
     fetch(`${API}/chat/sessions/${sessionId}/messages`, { method: "POST", body: JSON.stringify({ content, model, task_type: taskType }), headers: { "Content-Type": "application/json" } }),
   getMessages: (sessionId: string) => fetchJSON(`${API}/chat/sessions/${sessionId}/messages`),
   getModels: () => fetchJSON(`${API}/chat/models`),
+  forkSession: (sessionId: string, atMessageId: number, title?: string) =>
+    fetchJSON(`${API}/chat/sessions/${sessionId}/fork`, {
+      method: "POST",
+      body: JSON.stringify({ at_message_id: atMessageId, title }),
+    }),
   // Tools
   listTools: () => fetchJSON(`${API}/tools`),
+  getToolStats: () => fetchJSON(`${API}/tools/stats`),
   // Health
   health: () => fetchJSON("/health"),
 };

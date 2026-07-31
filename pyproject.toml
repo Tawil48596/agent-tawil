@@ -1,6 +1,6 @@
 [project]
 name = "ai-agent-platform"
-version = "0.1.0"
+version = "0.1.1"
 description = "通用 AI Agent 平台 — 多智能体协作、MCP 网关、RAG 检索增强、工具市场"
 readme = "README.md"
 license = {text = "MIT"}
@@ -103,6 +103,9 @@ ai-agent-cli = "cli:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["core", "plugins", "services", "shared"]
 
 [tool.ruff]
 target-version = "py311"

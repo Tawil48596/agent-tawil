@@ -15,7 +15,7 @@ class MCPServer:
     参考: https://modelcontextprotocol.io/
     """
 
-    def __init__(self, name: str = "ai-agent-platform", version: str = "0.1.0"):
+    def __init__(self, name: str = "ai-agent-platform", version: str = "0.1.1"):
         self.name = name
         self.version = version
         self._tools: dict[str, dict] = {}

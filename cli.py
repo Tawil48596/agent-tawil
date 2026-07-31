@@ -50,7 +50,7 @@ def color(text: str, c: str) -> str:
 class AgentCLI(cmd.Cmd):
     intro = color("""
 ╔══════════════════════════════════════════════╗
-║          AI Agent Platform  v0.1.0          ║
+║          AI Agent Platform  v0.1.1          ║
 ║  输入 /help 查看命令  |  /models 查看模型    ║
 ╚══════════════════════════════════════════════╝
 """, "cyan")

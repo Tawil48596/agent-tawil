@@ -21,7 +21,7 @@ async def list_tools(request: Request, query: str = "", toolset: str = "",
     return {"tools": [t.to_dict() for t in tools], "total": len(tools)}
 
 
-@router.get("/{name}")
+@router.get("/detail/{name}")
 async def get_tool(name: str, request: Request):
     tool = request.app.state.tool_registry.get(name)
     if not tool:
@@ -29,7 +29,7 @@ async def get_tool(name: str, request: Request):
     return tool.to_dict()
 
 
-@router.get("/{name}/dependencies")
+@router.get("/detail/{name}/dependencies")
 async def check_dependencies(name: str, request: Request):
     tool = request.app.state.tool_registry.get(name)
     if not tool:

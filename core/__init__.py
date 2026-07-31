@@ -9,4 +9,4 @@ Core components:
 - Protocols: 所有抽象协议定义
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

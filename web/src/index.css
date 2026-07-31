@@ -11,3 +11,22 @@ body { margin: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe 
 ::-webkit-scrollbar-thumb { background: #32415e; border-radius: 999px; }
 pre { background: #0c1426; padding: 12px; border-radius: 10px; overflow-x: auto; font-size: 13px; }
 code { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; }
+
+html[data-theme="light"] body { background: #eef2ff; }
+html[data-theme="light"] .app-shell {
+  background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 52%, #e2e8f0 100%);
+  color: #172033 !important;
+}
+html[data-theme="light"] [class*="bg-[#1a1d27]"],
+html[data-theme="light"] [class*="bg-[#18233b]"],
+html[data-theme="light"] [class*="bg-[#121a2d]"],
+html[data-theme="light"] [class*="bg-[#0f1117]"] {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+html[data-theme="light"] [class*="text-[#edf1ff]"],
+html[data-theme="light"] [class*="text-[#e1e4ea]"] { color: #172033 !important; }
+html[data-theme="light"] [class*="text-[#8b8fa3]"],
+html[data-theme="light"] [class*="text-[#8f9dbc]"],
+html[data-theme="light"] [class*="text-[#9ca9c9]"] { color: #53627a !important; }
+html[data-theme="light"] [class*="border-[#2a2d3a]"],
+html[data-theme="light"] [class*="border-white/10"] { border-color: #cbd5e1 !important; }

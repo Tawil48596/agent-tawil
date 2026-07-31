@@ -28,7 +28,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
   activeId: null,
   messages: [],
-  model: "",
+  model: typeof window !== "undefined" ? localStorage.getItem("ai-agent-default-model") || "" : "",
   task: "reasoning",
   models: [],
   tools: [],
@@ -47,7 +47,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         name: n, provider: "", available: true,
         context_length: 0, supports_vision: false, supports_tools: true,
       }));
-      set({ models: ms, tools: toolsData.tools || [], sessions: sessionsData.items || [] });
+      const savedModel = localStorage.getItem("ai-agent-default-model") || "";
+      const model = savedModel && ms.some((m) => m.name === savedModel) ? savedModel : "";
+      set({ models: ms, tools: toolsData.tools || [], sessions: sessionsData.items || [], model });
     } catch (e) {
       console.warn("Failed to initialize:", e);
     }
@@ -169,7 +171,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  setModel: (m) => set({ model: m }),
+  setModel: (m) => {
+    localStorage.setItem("ai-agent-default-model", m);
+    set({ model: m });
+  },
   setTask: (t) => set({ task: t }),
   clearError: () => set({ error: null }),
 }));

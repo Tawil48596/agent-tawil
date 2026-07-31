@@ -28,7 +28,7 @@ class SemVer:
 class VersionManager:
     def __init__(self): self._versions: dict[str, str] = {}
 
-    def register(self, name: str, version: str = "0.1.0"): self._versions[name] = version
+    def register(self, name: str, version: str = "0.1.1"): self._versions[name] = version
 
     def get(self, name: str) -> str: return self._versions.get(name, "0.0.0")
 
