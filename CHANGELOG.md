@@ -2,6 +2,12 @@
 
 本项目遵循语义化版本。
 
+## 0.7.0
+
+- Telegram、Slack 和 Discord 事件统一为同一入站消息协议。
+- 增加 Webhook HMAC 校验、发送者允许列表和事件去重。
+- 跨重启保存平台会话映射，并接入统一 Agent Webhook API。
+
 ## 0.6.0
 
 - 增加工具包 SHA-256 校验和可选 HMAC 发布者签名。

@@ -398,14 +398,20 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         from plugins.evals.runner import EvalRunner
         from plugins.evals.trace_viewer import TraceCollector
         from plugins.messaging.platforms.telegram import TelegramAdapter
+        from plugins.messaging.gateway import MessagingGateway
 
         eval_runner = EvalRunner()
         trace_collector = TraceCollector()
         telegram_bot = TelegramAdapter()
+        messaging_gateway = MessagingGateway(
+            config.get("messaging", {}),
+            config.get("messaging", {}).get("state_path", "data/messaging/sessions.json"),
+        )
 
         app.state.eval_runner = eval_runner
         app.state.trace_collector = trace_collector
         app.state.telegram_bot = telegram_bot
+        app.state.messaging_gateway = messaging_gateway
 
         if telegram_bot.is_configured:
             await telegram_bot.start()
@@ -476,6 +482,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     from plugins.web_ui.api.analytics import router as analytics_api_router
     from plugins.web_ui.api.github import router as github_api_router
     from plugins.web_ui.api.runtime_config import router as runtime_config_router
+    from plugins.web_ui.api.messaging import router as messaging_router
     app.include_router(chat_router)
     app.include_router(mcp_router)
     app.include_router(rag_router)
@@ -488,6 +495,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     app.include_router(analytics_api_router)
     app.include_router(github_api_router)
     app.include_router(runtime_config_router)
+    app.include_router(messaging_router)
 
     # ── Health check (must be before SPA fallback) ──
 
