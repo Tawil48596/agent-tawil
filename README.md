@@ -1,7 +1,7 @@
 # AI Agent Platform
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.1.2-6c8cff)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.0-6c8cff)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 一个面向本地开发和能力验证的 AI Agent 实验平台，提供 Web 对话、模型路由、工具调用、会话持久化、记忆、RAG、MCP 和多智能体编排等模块。
@@ -15,8 +15,8 @@
 | Web UI 与 REST API | 可用 | 对话、会话历史、设置、知识库、工具和分析页面 |
 | Agent 引擎 | 可用 | LiteLLM 模型路由、流式响应、工具调用、上下文管理和跨 Provider 降级 |
 | 会话与用量 | 可用 | SQLite 持久化、会话删除、自动标题、Token 与缓存命中统计 |
-| 本地长期记忆 | 实验性 | 内置 JSON 持久化、搜索、删除和清空 |
-| RAG | 实验性 | 知识库、文档摄取、切分、检索、重排和引用模块 |
+| 本地长期记忆 | 可用 | 持久化、来源追踪、用户/项目隔离、搜索、编辑和作用域清理 |
+| RAG | 可用（本地） | 知识库与文档持久化、混合检索、引用、文档删除和索引清理 |
 | MCP 与 GitHub | 实验性 | MCP 服务与工具调用、GitHub 仓库读取和工作区接口 |
 | 多智能体 | 实验性 | 任务计划、并行/层级编排、取消、重试、HITL 和检查点接口 |
 | 工具市场 | 原型 | 内置工具注册、启用、依赖检查和内存市场 |
@@ -25,13 +25,14 @@
 | PostgreSQL / Milvus / Mem0 | 规划中 | 配置或接口已预留，尚未形成可验证的生产实现 |
 | 运行时插件化 | 规划中 | 已有微内核组件，默认启动仍采用显式模块装配 |
 
-## v0.1.2 更新
+## v0.2.0 更新
 
-- 修复模型路由配置位置不一致的问题。
-- LLM 调用失败后排除失败的 Provider，避免重复请求同一故障服务。
-- 保留 OpenAI、Anthropic 和 DeepSeek 的工具调用兼容处理。
-- 完善中断重发、会话持久化、Token 与缓存命中统计测试。
-- 更新 README，使能力状态与当前实现一致。
+- 知识库、文档元数据和内置检索索引可跨服务重启保存。
+- 为文档和分块生成稳定 ID，检索结果返回可追踪引用。
+- 删除文档时同时清理向量数据和关键词检索索引。
+- 长期记忆增加来源、会话、用户、项目、标签和可信度信息。
+- 支持按用户和项目搜索、更新及清理长期记忆。
+- 知识库页面可查看和删除已持久化文档。
 
 完整记录见 [CHANGELOG.md](CHANGELOG.md)。
 

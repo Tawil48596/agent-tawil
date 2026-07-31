@@ -1,7 +1,7 @@
 """RAG API — 知识库 + 检索"""
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/v1/rag", tags=["rag"])
 
@@ -13,19 +13,22 @@ class KBCreateRequest(BaseModel):
 
 class IndexRequest(BaseModel):
     content: str
-    metadata: dict = {}
+    metadata: dict = Field(default_factory=dict)
     chunk_strategy: str = "fixed"
 
 
 class QueryRequest(BaseModel):
     query: str
-    knowledge_bases: list[str] = []
+    knowledge_bases: list[str] = Field(default_factory=list)
     top_k: int = 5
 
 
 @router.post("/knowledge-bases")
 async def create_kb(body: KBCreateRequest, request: Request):
-    kb_id = await request.app.state.rag_engine.create_kb(body.name, body.description)
+    try:
+        kb_id = await request.app.state.rag_engine.create_kb(body.name, body.description)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
     return {"id": kb_id, "name": body.name}
 
 
@@ -36,16 +39,24 @@ async def list_kbs(request: Request):
 
 @router.delete("/knowledge-bases/{kb_id}")
 async def delete_kb(kb_id: str, request: Request):
-    await request.app.state.rag_engine.delete_kb(kb_id)
+    if not await request.app.state.rag_engine.delete_kb(kb_id):
+        raise HTTPException(404, "Knowledge base not found")
     return {"ok": True}
 
 
 @router.post("/knowledge-bases/{kb_id}/documents")
 async def index_document(kb_id: str, body: IndexRequest, request: Request):
-    count = await request.app.state.rag_engine.index_document(
-        kb_id, body.content, body.metadata, body.chunk_strategy,
-    )
-    return {"chunks_indexed": count}
+    try:
+        document = await request.app.state.rag_engine.index_document_with_record(
+            kb_id, body.content, body.metadata, body.chunk_strategy,
+        )
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return {
+        "document": document,
+        "document_id": document["id"],
+        "chunks_indexed": document["chunk_count"],
+    }
 
 
 @router.post("/knowledge-bases/{kb_id}/upload")
@@ -68,18 +79,41 @@ async def upload_file(kb_id: str, file: UploadFile = File(...), request: Request
         except Exception:
             pass  # Fall back to raw text
 
-    count = await request.app.state.rag_engine.index_document(
-        kb_id, text,
-        {"source": file.filename or "upload", "filename": file.filename, "size": len(content)},
-        strategy,
-    )
-    return {"chunks_indexed": count, "filename": file.filename, "strategy": strategy, "size_bytes": len(content)}
+    try:
+        document = await request.app.state.rag_engine.index_document_with_record(
+            kb_id,
+            text,
+            {
+                "source": file.filename or "upload",
+                "filename": file.filename,
+                "size": len(content),
+            },
+            strategy,
+        )
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return {
+        "document": document,
+        "document_id": document["id"],
+        "chunks_indexed": document["chunk_count"],
+        "filename": file.filename,
+        "strategy": strategy,
+        "size_bytes": len(content),
+    }
 
 
 @router.get("/knowledge-bases/{kb_id}/documents")
 async def list_documents(kb_id: str, request: Request):
     """列出知识库中的文档"""
-    return {"documents": [], "kb_id": kb_id}
+    documents = await request.app.state.rag_engine.list_documents(kb_id)
+    return {"documents": documents, "kb_id": kb_id}
+
+
+@router.delete("/knowledge-bases/{kb_id}/documents/{document_id}")
+async def delete_document(kb_id: str, document_id: str, request: Request):
+    if not await request.app.state.rag_engine.delete_document(kb_id, document_id):
+        raise HTTPException(404, "Document not found")
+    return {"ok": True}
 
 
 @router.post("/query")

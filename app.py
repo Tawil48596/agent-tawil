@@ -102,7 +102,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         """应用生命周期管理"""
-        logger.info("Starting AI Agent Platform...", version="0.1.2")
+        logger.info("Starting AI Agent Platform...", version="0.2.0")
 
         # ── Phase 1: Agent 引擎 ──
         from plugins.agent_engine.model_router import ModelRouter
@@ -315,11 +315,11 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
         # 种子市场数据
         marketplace.publish(MarketplaceEntry(
-            name="web_search", description="DuckDuckGo 搜索", version="0.1.2",
+            name="web_search", description="DuckDuckGo 搜索", version="0.2.0",
             author="builtin", tags=["search", "builtin"], downloads=1000,
         ))
         marketplace.publish(MarketplaceEntry(
-            name="file_read", description="文件读取", version="0.1.2",
+            name="file_read", description="文件读取", version="0.2.0",
             author="builtin", tags=["file", "builtin"], downloads=800,
         ))
 
@@ -422,7 +422,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
     app = FastAPI(
         title="AI Agent Platform",
-        version="0.1.2",
+        version="0.2.0",
         description="通用 AI Agent 平台 — 多智能体协作、MCP 网关、RAG 检索增强",
         lifespan=lifespan,
     )
@@ -483,7 +483,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     async def health():
         return {
             "status": "ok",
-            "version": "0.1.2",
+            "version": "0.2.0",
             "config_loaded": bool(config),
         }
 

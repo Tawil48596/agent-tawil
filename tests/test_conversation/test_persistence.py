@@ -76,3 +76,64 @@ async def test_builtin_long_term_memory_survives_restart(tmp_path):
 
     await reopened.delete(entry_id)
     assert LongTermMemory(config).count == 0
+
+
+@pytest.mark.asyncio
+async def test_memory_metadata_filters_updates_and_scoped_clear(tmp_path):
+    from plugins.memory.long_term import LongTermMemory, MemoryEntry
+
+    config = {
+        "memory": {
+            "long_term_backend": "builtin",
+            "storage_path": str(tmp_path / "memory.json"),
+            "importance_threshold": 0.1,
+        },
+    }
+    memory = LongTermMemory(config)
+    project_a_id = await memory.save(MemoryEntry(
+        id="",
+        content="Use PostgreSQL for production",
+        source="conversation",
+        source_session="session-a",
+        user_id="user-a",
+        project_id="project-a",
+        tags=["database"],
+        confidence=0.9,
+    ))
+    duplicate_id = await memory.save(MemoryEntry(
+        id="",
+        content="  use PostgreSQL for production  ",
+        user_id="user-a",
+        project_id="project-a",
+        importance=0.8,
+    ))
+    await memory.save(MemoryEntry(
+        id="",
+        content="Use SQLite for prototypes",
+        source="manual",
+        user_id="user-a",
+        project_id="project-b",
+    ))
+
+    isolated = await memory.search(
+        "production",
+        user_id="user-a",
+        project_id="project-a",
+    )
+    assert duplicate_id == project_a_id
+    assert [entry.id for entry in isolated] == [project_a_id]
+    assert isolated[0].source_session == "session-a"
+    assert isolated[0].tags == ["database"]
+
+    updated = await memory.update(
+        project_a_id,
+        content="Use PostgreSQL 17 for production",
+        confidence=0.95,
+    )
+    assert updated is not None
+    assert updated.confidence == 0.95
+
+    await memory.clear(user_id="user-a", project_id="project-a")
+    restarted = LongTermMemory(config)
+    assert restarted.list_entries(project_id="project-a") == []
+    assert len(restarted.list_entries(project_id="project-b")) == 1
