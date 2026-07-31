@@ -8,6 +8,8 @@ interface ChatState {
   messages: Message[];
   model: string;
   task: string;
+  reasoningEffort: string;
+  toolsEnabled: boolean;
   models: ModelInfo[];
   tools: ToolDef[];
   streaming: boolean;
@@ -21,6 +23,8 @@ interface ChatState {
   sendMessage: (text: string) => Promise<void>;
   setModel: (m: string) => void;
   setTask: (t: string) => void;
+  setReasoningEffort: (effort: string) => void;
+  setToolsEnabled: (enabled: boolean) => void;
   clearError: () => void;
 }
 
@@ -30,6 +34,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   model: typeof window !== "undefined" ? localStorage.getItem("ai-agent-default-model") || "" : "",
   task: "reasoning",
+  reasoningEffort: typeof window !== "undefined" ? localStorage.getItem("ai-agent-reasoning-effort") || "auto" : "auto",
+  toolsEnabled: typeof window !== "undefined" ? localStorage.getItem("ai-agent-tools-enabled") !== "false" : true,
   models: [],
   tools: [],
   streaming: false,
@@ -43,10 +49,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         api.listTools().catch(() => ({ tools: [] })),
         api.listSessions().catch(() => ({ items: [] })),
       ]);
-      const ms: ModelInfo[] = (modelsData.available_models || []).map((n: string) => ({
-        name: n, provider: "", available: true,
-        context_length: 0, supports_vision: false, supports_tools: true,
-      }));
+      const ms: ModelInfo[] = (modelsData.models || []).filter((m: ModelInfo) => m.available);
       const savedModel = localStorage.getItem("ai-agent-default-model") || "";
       const model = savedModel && ms.some((m) => m.name === savedModel) ? savedModel : "";
       set({ models: ms, tools: toolsData.tools || [], sessions: sessionsData.items || [], model });
@@ -102,8 +105,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     let fullText = "";
     try {
-      const { model, task } = get();
-      const resp = await api.sendMessage(sid, text, model || undefined, task);
+      const { model, task, reasoningEffort, toolsEnabled, tools } = get();
+      const enabledToolNames = toolsEnabled
+        ? tools.filter((tool) => !tool.is_dangerous).map((tool) => tool.name)
+        : [];
+      const resp = await api.sendMessage(
+        sid, text, model || undefined, task, reasoningEffort, enabledToolNames,
+      );
       if (!resp.ok) {
         const errText = await resp.text();
         throw new Error(`${resp.status}: ${errText}`);
@@ -146,6 +154,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
               case "thinking":
                 set({ streamContent: "💭 " + (d.content || "思考中...") });
                 break;
+              case "tool_calls":
+                set({ streamContent: `正在调用 ${d.calls?.length || 0} 个工具…` });
+                break;
+              case "tool_results":
+                set({ streamContent: "工具执行完成，正在整理结果…" });
+                break;
             }
           } catch {
             // skip malformed JSON chunks
@@ -176,5 +190,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ model: m });
   },
   setTask: (t) => set({ task: t }),
+  setReasoningEffort: (effort) => {
+    localStorage.setItem("ai-agent-reasoning-effort", effort);
+    set({ reasoningEffort: effort });
+  },
+  setToolsEnabled: (enabled) => {
+    localStorage.setItem("ai-agent-tools-enabled", String(enabled));
+    set({ toolsEnabled: enabled });
+  },
   clearError: () => set({ error: null }),
 }));

@@ -111,7 +111,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
         router = ModelRouter(config)
         tool_dispatcher = ToolDispatcher()
-        engine = AgentEngine(router, config.get("agent", {}))
+        engine = AgentEngine(router, config.get("agent", {}), tool_dispatcher)
 
         async def _echo(text: str) -> str:
             return text

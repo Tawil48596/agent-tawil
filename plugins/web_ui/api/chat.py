@@ -1,7 +1,7 @@
 """Chat API — 对话端点 (SSE 流式 + model 参数)"""
 
 import json
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -22,6 +22,7 @@ class ChatRequest(BaseModel):
     task_type: str = "reasoning"      # reasoning | coding | summarization
     prefer_provider: Optional[str] = None
     tools: Optional[list[str]] = None
+    reasoning_effort: Literal["auto", "low", "medium", "high"] = "auto"
 
 
 class SessionCreate(BaseModel):
@@ -124,14 +125,33 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
         }
         task_type = TaskType(task_type_map.get(body.task_type, "reasoning"))
 
+        registry = getattr(request.app.state, "tool_registry", None)
+        enabled_tools = []
+        if registry is not None:
+            requested_tools = set(body.tools) if body.tools is not None else None
+            enabled_tools = [
+                tool.to_dict()
+                for tool in registry.list_enabled()
+                if not tool.is_dangerous
+                and (requested_tools is None or tool.name in requested_tools)
+                and registry.check_dependencies(tool)["available"]
+            ]
+
         try:
             async for event in engine.run_stream(
                 user_message=body.content,
                 history=_messages.get(session_id, [])[:-1],
-                enabled_tools=None,
+                enabled_tools=enabled_tools,
                 override_model=body.model,
                 task_type=task_type,
+                reasoning_effort=None if body.reasoning_effort == "auto" else body.reasoning_effort,
             ):
+                if event.get("type") == "done" and event.get("content"):
+                    _messages.setdefault(session_id, []).append({
+                        "role": "assistant",
+                        "content": event["content"],
+                        "model": event.get("model"),
+                    })
                 yield {"event": "message", "data": json.dumps(event, ensure_ascii=False, default=str)}
 
         except Exception as e:

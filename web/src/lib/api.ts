@@ -12,8 +12,19 @@ export const api = {
   listSessions: () => fetchJSON(`${API}/chat/sessions`),
   getSession: (id: string) => fetchJSON(`${API}/chat/sessions/${id}`),
   deleteSession: (id: string) => fetchJSON(`${API}/chat/sessions/${id}`, { method: "DELETE" }),
-  sendMessage: (sessionId: string, content: string, model?: string, taskType?: string) =>
-    fetch(`${API}/chat/sessions/${sessionId}/messages`, { method: "POST", body: JSON.stringify({ content, model, task_type: taskType }), headers: { "Content-Type": "application/json" } }),
+  sendMessage: (
+    sessionId: string,
+    content: string,
+    model?: string,
+    taskType?: string,
+    reasoningEffort?: string,
+    tools?: string[],
+  ) =>
+    fetch(`${API}/chat/sessions/${sessionId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content, model, task_type: taskType, reasoning_effort: reasoningEffort, tools }),
+      headers: { "Content-Type": "application/json" },
+    }),
   getMessages: (sessionId: string) => fetchJSON(`${API}/chat/sessions/${sessionId}/messages`),
   getModels: () => fetchJSON(`${API}/chat/models`),
   forkSession: (sessionId: string, atMessageId: number, title?: string) =>

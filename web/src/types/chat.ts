@@ -50,4 +50,5 @@ export interface ModelInfo {
   context_length: number;
   supports_vision: boolean;
   supports_tools: boolean;
+  supports_reasoning_effort?: boolean;
 }

@@ -1,5 +1,5 @@
 import { useChatStore } from "@/stores/chatStore";
-import { GitBranch, Circle } from "lucide-react";
+import { GitBranch, Circle, Wrench } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useState } from "react";
@@ -10,6 +10,11 @@ export function ChatHeader() {
   const models = useChatStore((s) => s.models);
   const setModel = useChatStore((s) => s.setModel);
   const setTask = useChatStore((s) => s.setTask);
+  const reasoningEffort = useChatStore((s) => s.reasoningEffort);
+  const setReasoningEffort = useChatStore((s) => s.setReasoningEffort);
+  const toolsEnabled = useChatStore((s) => s.toolsEnabled);
+  const setToolsEnabled = useChatStore((s) => s.setToolsEnabled);
+  const tools = useChatStore((s) => s.tools);
   const activeId = useChatStore((s) => s.activeId);
   const error = useChatStore((s) => s.error);
   const messages = useChatStore((s) => s.messages);
@@ -42,8 +47,32 @@ export function ChatHeader() {
       <select value={model} onChange={(e) => setModel(e.target.value)}
         className="bg-[#18233b] text-sm border border-white/10 rounded-lg px-3 py-2 text-[#e1e4ea] focus:outline-none focus:ring-2 focus:ring-[#7899ff]/40">
         <option value="">自动路由</option>
-        {models.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
+        {models.map((m) => (
+          <option key={m.name} value={m.name}>
+            {m.provider ? `${m.provider} · ` : ""}{m.name}
+          </option>
+        ))}
       </select>
+      <select value={reasoningEffort} onChange={(e) => setReasoningEffort(e.target.value)}
+        title="控制支持该参数的模型所使用的思考强度"
+        className="bg-[#18233b] text-sm border border-white/10 rounded-lg px-3 py-2 text-[#e1e4ea] focus:outline-none focus:ring-2 focus:ring-[#7899ff]/40">
+        <option value="auto">思考：自动</option>
+        <option value="low">思考：低</option>
+        <option value="medium">思考：中</option>
+        <option value="high">思考：高</option>
+      </select>
+      <button
+        type="button"
+        onClick={() => setToolsEnabled(!toolsEnabled)}
+        title={toolsEnabled ? `已开放 ${tools.filter((tool) => !tool.is_dangerous).length} 个安全工具` : "工具调用已关闭"}
+        className={`text-xs flex items-center gap-1 px-3 py-2 rounded-lg border transition ${
+          toolsEnabled
+            ? "border-[#63d6a3]/40 bg-[#16352f] text-[#8ff0c4]"
+            : "border-white/10 text-[#9ca9c9] hover:bg-white/5"
+        }`}
+      >
+        <Wrench size={14} /> 工具{toolsEnabled ? "开启" : "关闭"}
+      </button>
       <select value={task} onChange={(e) => setTask(e.target.value)}
         className="bg-[#18233b] text-sm border border-white/10 rounded-lg px-3 py-2 text-[#e1e4ea] focus:outline-none focus:ring-2 focus:ring-[#7899ff]/40">
         <option value="reasoning">推理</option>

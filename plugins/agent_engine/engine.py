@@ -29,13 +29,18 @@ class EngineResponse:
 class AgentEngine:
     """主推理引擎"""
 
-    def __init__(self, router: ModelRouter, agent_config: dict[str, Any]):
+    def __init__(
+        self,
+        router: ModelRouter,
+        agent_config: dict[str, Any],
+        tool_dispatcher: Optional[ToolDispatcher] = None,
+    ):
         self.router = router
         self.max_turns = agent_config.get("max_turns", 50)
         self.compression_threshold = agent_config.get("context_compression_threshold", 0.75)
         self.prompt_builder = PromptBuilder()
         self.context_manager = ContextManager()
-        self.tool_dispatcher = ToolDispatcher()
+        self.tool_dispatcher = tool_dispatcher or ToolDispatcher()
 
     # ── 同步运行 ──
 
@@ -50,6 +55,7 @@ class AgentEngine:
         enabled_tools: Optional[list[dict]] = None,
         override_model: Optional[str] = None,
         task_type: TaskType = TaskType.REASONING,
+        reasoning_effort: Optional[str] = None,
         skill_files: Optional[list[str]] = None,
     ) -> EngineResponse:
         """运行 Agent 推理循环，返回最终回复"""
@@ -63,7 +69,9 @@ class AgentEngine:
             override_model=override_model,
         ))
 
-        return await self._inference_loop(messages, route_result, enabled_tools)
+        return await self._inference_loop(
+            messages, route_result, enabled_tools, reasoning_effort
+        )
 
     # ── 流式运行 ──
 
@@ -78,6 +86,7 @@ class AgentEngine:
         enabled_tools: Optional[list[dict]] = None,
         override_model: Optional[str] = None,
         task_type: TaskType = TaskType.REASONING,
+        reasoning_effort: Optional[str] = None,
         skill_files: Optional[list[str]] = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """流式运行 Agent 推理循环，逐 token 产出事件"""
@@ -101,13 +110,12 @@ class AgentEngine:
                 messages = await self.context_manager.compress(messages, route_result)
 
             try:
+                completion_kwargs = self._completion_kwargs(
+                    route_result, messages, enabled_tools, reasoning_effort
+                )
                 response = await acompletion(
-                    model=self._litellm_model_name(route_result),
-                    messages=messages,
-                    tools=self._format_tools(enabled_tools) if enabled_tools else None,
-                    api_key=route_result.api_key,
-                    api_base=route_result.base_url if route_result.base_url else None,
                     stream=True,
+                    **completion_kwargs,
                 )
 
                 # 收集流式响应
@@ -208,7 +216,11 @@ class AgentEngine:
     # ── 内部方法 ──
 
     async def _inference_loop(
-        self, messages: list[dict], route_result: RouteResult, enabled_tools: Optional[list[dict]]
+        self,
+        messages: list[dict],
+        route_result: RouteResult,
+        enabled_tools: Optional[list[dict]],
+        reasoning_effort: Optional[str] = None,
     ) -> EngineResponse:
         """非流式推理循环"""
         turns = 0
@@ -219,13 +231,9 @@ class AgentEngine:
                 messages = await self.context_manager.compress(messages, route_result)
 
             try:
-                response = await acompletion(
-                    model=self._litellm_model_name(route_result),
-                    messages=messages,
-                    tools=self._format_tools(enabled_tools) if enabled_tools else None,
-                    api_key=route_result.api_key,
-                    api_base=route_result.base_url if route_result.base_url else None,
-                )
+                response = await acompletion(**self._completion_kwargs(
+                    route_result, messages, enabled_tools, reasoning_effort
+                ))
             except Exception as e:
                 logger.error("LLM error", error=str(e))
                 fallback = self.router.route(RouteRequest(task_type=TaskType.FAST))
@@ -325,6 +333,27 @@ class AgentEngine:
         if provider == "openai":
             return model  # LiteLLM 原生支持
         return f"{provider}/{model}"
+
+    def _completion_kwargs(
+        self,
+        route: RouteResult,
+        messages: list[dict],
+        tools: Optional[list[dict]],
+        reasoning_effort: Optional[str],
+    ) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "model": self._litellm_model_name(route),
+            "messages": messages,
+            "api_key": route.api_key,
+            "api_base": route.base_url if route.base_url else None,
+        }
+        formatted_tools = self._format_tools(tools) if route.supports_tools else None
+        if formatted_tools:
+            kwargs["tools"] = formatted_tools
+            kwargs["tool_choice"] = "auto"
+        if route.supports_reasoning_effort and reasoning_effort in {"low", "medium", "high"}:
+            kwargs["reasoning_effort"] = reasoning_effort
+        return kwargs
 
     @staticmethod
     def _format_tools(tools: Optional[list[dict]]) -> Optional[list[dict]]:
