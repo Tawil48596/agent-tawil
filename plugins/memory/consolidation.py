@@ -30,7 +30,9 @@ class MemoryConsolidator:
 
     async def consolidate(self, messages: list[dict],
                            session_id: str = "",
-                           model_override: str = None) -> list[str]:
+                           model_override: str = None,
+                           user_id: str = "local",
+                           project_id: str = "default") -> list[str]:
         """从对话中提取关键信息并写入长期记忆"""
         if not messages or len(messages) < 3:
             return []
@@ -54,6 +56,9 @@ class MemoryConsolidator:
                 type=item.get("type", "fact"),
                 importance=float(item.get("importance", 0.5)),
                 source_session=session_id,
+                source="conversation",
+                user_id=user_id,
+                project_id=project_id,
             )
             eid = await self._ltm.save(entry)
             if eid:

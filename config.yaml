@@ -25,6 +25,8 @@ redis:
 
 vector_store:
   backend: "chromadb"  # chromadb | pgvector | milvus
+  builtin:
+    path: "./data/rag_vectors.json"
   chromadb:
     path: "./chroma_data"
   pgvector:
@@ -70,6 +72,7 @@ memory:
   max_retrieved: 10
 
 rag:
+  metadata_path: "./data/rag_metadata.json"
   default_chunk_size: 512
   default_chunk_overlap: 0.1
   retrieval_top_k: 10

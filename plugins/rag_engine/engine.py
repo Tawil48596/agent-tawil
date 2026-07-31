@@ -1,5 +1,6 @@
 """RAG 主引擎 — 索引 + 检索 + 注入"""
 
+from dataclasses import asdict
 from typing import Any, Optional
 
 import structlog
@@ -9,6 +10,7 @@ from plugins.rag_engine.retriever import HybridRetriever
 from plugins.rag_engine.reranker import Reranker
 from plugins.rag_engine.query_rewriter import QueryRewriter
 from plugins.rag_engine.guardrail import RetrievalGuardrail
+from plugins.rag_engine.knowledge_base import DocumentRecord, KnowledgeBaseManager
 from plugins.rag_engine.vector_store import VectorStore
 
 logger = structlog.get_logger()
@@ -31,32 +33,110 @@ class RAGEngine:
         )
         self._top_k = rag_cfg.get("retrieval_top_k", 10)
         self._rerank_top_k = rag_cfg.get("rerank_top_k", 5)
-        self._kb_cache: dict[str, dict] = {}
+        self._kb_manager = KnowledgeBaseManager(
+            rag_cfg.get("metadata_path", "data/rag_metadata.json")
+        )
 
     # ── Knowledge Base Management ──
 
     async def create_kb(self, name: str, description: str = "") -> str:
-        import uuid
-        kb_id = uuid.uuid4().hex[:8]
-        self._kb_cache[kb_id] = {"id": kb_id, "name": name, "description": description}
-        logger.info("KB created", id=kb_id, name=name)
-        return kb_id
+        if not name.strip():
+            raise ValueError("Knowledge base name is required")
+        kb = self._kb_manager.create(name, description)
+        logger.info("KB created", id=kb.id, name=kb.name)
+        return kb.id
 
-    async def delete_kb(self, kb_id: str):
-        self._kb_cache.pop(kb_id, None)
+    async def delete_kb(self, kb_id: str) -> bool:
+        deleted = self._kb_manager.delete(kb_id)
         await self._vector_store.delete_collection(f"kb_{kb_id}")
+        return deleted
 
     async def list_kbs(self) -> list[dict]:
-        return list(self._kb_cache.values())
+        result = []
+        for kb in self._kb_manager.list_all():
+            item = asdict(kb)
+            item.pop("documents", None)
+            result.append(item)
+        return result
+
+    async def list_documents(self, kb_id: str) -> list[dict]:
+        return [
+            asdict(document)
+            for document in self._kb_manager.list_documents(kb_id)
+        ]
 
     # ── Document Indexing ──
 
     async def index_document(self, kb_id: str, content: str, metadata: dict = None,
                               chunk_strategy: str = "fixed") -> int:
         """索引单篇文档，返回 chunk 数量"""
-        chunks = await self._indexer.index(content, metadata or {}, chunk_strategy)
+        result = await self.index_document_with_record(
+            kb_id, content, metadata, chunk_strategy
+        )
+        return result["chunk_count"]
+
+    async def index_document_with_record(
+        self,
+        kb_id: str,
+        content: str,
+        metadata: dict = None,
+        chunk_strategy: str = "fixed",
+    ) -> dict:
+        if not self._kb_manager.get(kb_id):
+            raise ValueError(f"Knowledge base '{kb_id}' not found")
+        if not content.strip():
+            raise ValueError("Document content is empty")
+
+        import uuid
+
+        metadata = dict(metadata or {})
+        document_id = uuid.uuid4().hex[:12]
+        source = str(metadata.get("source") or metadata.get("filename") or document_id)
+        document_name = str(metadata.get("filename") or metadata.get("name") or source)
+        normalized_metadata = {
+            **metadata,
+            "document_id": document_id,
+            "kb_id": kb_id,
+            "source": source,
+        }
+        chunks = await self._indexer.index(
+            content, normalized_metadata, chunk_strategy
+        )
+        for index, chunk in enumerate(chunks):
+            chunk["id"] = f"{document_id}_{index}"
         await self._vector_store.add(f"kb_{kb_id}", chunks)
-        return len(chunks)
+
+        record = DocumentRecord(
+            id=document_id,
+            name=document_name,
+            source=source,
+            size_bytes=int(metadata.get("size", len(content.encode("utf-8")))),
+            chunk_count=len(chunks),
+            chunk_strategy=chunk_strategy,
+            metadata={
+                key: value for key, value in metadata.items()
+                if key not in {"size"}
+            },
+        )
+        self._kb_manager.add_document(kb_id, record)
+        await self._refresh_sparse_index(kb_id)
+        return asdict(record)
+
+    async def delete_document(self, kb_id: str, document_id: str) -> bool:
+        deleted = self._kb_manager.delete_document(kb_id, document_id)
+        if not deleted:
+            return False
+        await self._vector_store.delete_document(f"kb_{kb_id}", document_id)
+        await self._refresh_sparse_index(kb_id)
+        return True
+
+    async def _refresh_sparse_index(self, kb_id: str) -> None:
+        collection = f"kb_{kb_id}"
+        chunks = await self._vector_store.list_documents(collection)
+        self._retriever.index_bm25(
+            collection,
+            [chunk.get("content", "") for chunk in chunks],
+        )
 
     async def index_documents(self, kb_id: str, documents: list[dict],
                                chunk_strategy: str = "fixed") -> int:
@@ -105,8 +185,22 @@ class RAGEngine:
 
         return {
             "results": [
-                {"content": r.content, "score": r.score, "source": r.metadata.get("source", ""),
-                 "chunk_id": r.chunk_id}
+                {
+                    "content": r.content,
+                    "score": r.score,
+                    "source": r.metadata.get("source", ""),
+                    "source_id": r.metadata.get("document_id", ""),
+                    "document_id": r.metadata.get("document_id", ""),
+                    "kb_id": r.metadata.get("kb_id", ""),
+                    "chunk_id": r.chunk_id,
+                    "chunk_index": r.metadata.get("chunk_index"),
+                    "citation": {
+                        "source": r.metadata.get("source", ""),
+                        "document_id": r.metadata.get("document_id", ""),
+                        "chunk_id": r.chunk_id,
+                        "chunk_index": r.metadata.get("chunk_index"),
+                    },
+                }
                 for r in reranked
             ],
             "blocked": False,

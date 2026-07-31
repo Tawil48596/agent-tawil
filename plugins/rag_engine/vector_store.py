@@ -1,5 +1,7 @@
 """向量库抽象层"""
 
+import json
+from pathlib import Path
 from typing import Any, Optional
 
 import structlog
@@ -16,6 +18,9 @@ class VectorStore:
         self._backend = vs_cfg.get("backend", "builtin")
         self._client = None
         self._collections: dict[str, "BuiltinCollection"] = {}  # builtin fallback
+        self._storage_path = Path(
+            vs_cfg.get("builtin", {}).get("path", "data/rag_vectors.json")
+        )
 
         if self._backend == "chromadb":
             try:
@@ -26,26 +31,82 @@ class VectorStore:
                 )
             except ImportError:
                 self._backend = "builtin"
+        if self._backend == "builtin":
+            self._load_builtin()
+
+    def _load_builtin(self) -> None:
+        if not self._storage_path.exists():
+            return
+        try:
+            payload = json.loads(self._storage_path.read_text(encoding="utf-8"))
+            self._collections = {
+                name: BuiltinCollection(name, documents)
+                for name, documents in payload.items()
+            }
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            self._collections = {}
+
+    def _persist_builtin(self) -> None:
+        if self._backend != "builtin":
+            return
+        self._storage_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            name: collection.documents()
+            for name, collection in self._collections.items()
+        }
+        temporary = self._storage_path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        temporary.replace(self._storage_path)
 
     async def add(self, collection: str, chunks: list[dict]):
         """添加 chunks 到向量库"""
         if self._client and self._backend == "chromadb":
             col = self._client.get_or_create_collection(name=collection)
-            ids = [f"{collection}_{i}" for i in range(len(chunks))]
+            ids = [
+                chunk.get("id") or f"{collection}_{i}"
+                for i, chunk in enumerate(chunks)
+            ]
             documents = [c["content"] for c in chunks]
-            metadatas = [c.get("metadata", {}) for c in chunks]
-            col.add(ids=ids, documents=documents, metadatas=metadatas)
+            metadatas = [
+                self._normalize_metadata(c.get("metadata", {}))
+                for c in chunks
+            ]
+            col.upsert(ids=ids, documents=documents, metadatas=metadatas)
         else:
             if collection not in self._collections:
                 self._collections[collection] = BuiltinCollection(collection)
             self._collections[collection].add(chunks)
+            self._persist_builtin()
+
+    @staticmethod
+    def _normalize_metadata(metadata: dict) -> dict:
+        normalized = {}
+        for key, value in metadata.items():
+            if value is None:
+                normalized[key] = ""
+            elif isinstance(value, (str, int, float, bool)):
+                normalized[key] = value
+            else:
+                normalized[key] = json.dumps(value, ensure_ascii=False)
+        return normalized
 
     async def search(self, query: str, collections: list[str] = None,
                       top_k: int = 10) -> list[dict]:
         """搜索"""
         all_results = []
 
-        search_collections = collections or list(self._collections.keys())
+        if collections:
+            search_collections = collections
+        elif self._client and self._backend == "chromadb":
+            search_collections = [
+                collection.name for collection in self._client.list_collections()
+                if collection.name.startswith("kb_")
+            ]
+        else:
+            search_collections = list(self._collections.keys())
 
         if self._client and self._backend == "chromadb":
             for col_name in search_collections:
@@ -78,17 +139,56 @@ class VectorStore:
             except Exception:
                 pass
         self._collections.pop(collection, None)
+        self._persist_builtin()
+
+    async def delete_document(self, collection: str, document_id: str) -> None:
+        if self._client and self._backend == "chromadb":
+            try:
+                col = self._client.get_collection(name=collection)
+                col.delete(where={"document_id": document_id})
+            except Exception:
+                pass
+        elif collection in self._collections:
+            self._collections[collection].delete_document(document_id)
+            self._persist_builtin()
+
+    async def list_documents(self, collection: str) -> list[dict]:
+        if self._client and self._backend == "chromadb":
+            try:
+                col = self._client.get_collection(name=collection)
+                result = col.get(include=["documents", "metadatas"])
+                return [
+                    {
+                        "id": result["ids"][index],
+                        "content": result["documents"][index],
+                        "metadata": result["metadatas"][index] or {},
+                    }
+                    for index in range(len(result["ids"]))
+                ]
+            except Exception:
+                return []
+        target = self._collections.get(collection)
+        return target.documents() if target else []
 
 
 class BuiltinCollection:
     """内置向量存储 — 关键词匹配 (零依赖)"""
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, documents: Optional[list[dict]] = None):
         self.name = name
-        self._docs: list[dict] = []
+        self._docs: list[dict] = list(documents or [])
 
     def add(self, chunks: list[dict]):
         self._docs.extend(chunks)
+
+    def documents(self) -> list[dict]:
+        return [dict(document) for document in self._docs]
+
+    def delete_document(self, document_id: str) -> None:
+        self._docs = [
+            document for document in self._docs
+            if document.get("metadata", {}).get("document_id") != document_id
+        ]
 
     def search(self, query: str, top_k: int = 10) -> list[dict]:
         query_lower = query.lower()
@@ -110,7 +210,7 @@ class BuiltinCollection:
 
             if score > 0:
                 scored.append({
-                    "id": f"{self.name}_{i}",
+                    "id": doc.get("id") or f"{self.name}_{i}",
                     "content": content,
                     "score": score,
                     "metadata": doc.get("metadata", {}),

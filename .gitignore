@@ -35,6 +35,7 @@ chroma_data/
 # Node (frontend)
 web/node_modules/
 web/dist/
+*.tsbuildinfo
 
 # Docker
 docker-compose.override.yml

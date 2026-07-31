@@ -18,7 +18,13 @@ class MemoryEntry:
     type: str = "fact"          # fact | preference | event | lesson
     importance: float = 0.5
     source_session: Optional[str] = None
+    source: str = "manual"
+    user_id: str = "local"
+    project_id: str = "default"
+    tags: list[str] = field(default_factory=list)
+    confidence: float = 1.0
     created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
     last_accessed_at: float = field(default_factory=time.time)
     access_count: int = 0
     ttl: Optional[int] = None   # 过期时间 (秒)
@@ -45,10 +51,9 @@ class LongTermMemory:
         self._chroma_client = None
         self._chroma_collection = None
 
+        self._load_builtin()
         if self._backend == "chromadb":
             self._init_chromadb(cfg)
-        else:
-            self._load_builtin()
 
     def _load_builtin(self) -> None:
         if not self._storage_path.exists():
@@ -62,8 +67,6 @@ class LongTermMemory:
             self._storage = {}
 
     def _persist_builtin(self) -> None:
-        if self._backend != "builtin":
-            return
         self._storage_path.parent.mkdir(parents=True, exist_ok=True)
         payload = [
             {
@@ -73,7 +76,13 @@ class LongTermMemory:
                 "type": entry.type,
                 "importance": entry.importance,
                 "source_session": entry.source_session,
+                "source": entry.source,
+                "user_id": entry.user_id,
+                "project_id": entry.project_id,
+                "tags": entry.tags,
+                "confidence": entry.confidence,
                 "created_at": entry.created_at,
+                "updated_at": entry.updated_at,
                 "last_accessed_at": entry.last_accessed_at,
                 "access_count": entry.access_count,
                 "ttl": entry.ttl,
@@ -106,6 +115,18 @@ class LongTermMemory:
         """保存记忆条目"""
         if entry.importance < self._importance_threshold:
             return ""  # 低于阈值，不保存
+        normalized_content = " ".join(entry.content.strip().lower().split())
+        for existing in self._storage.values():
+            if (
+                existing.user_id == entry.user_id
+                and existing.project_id == entry.project_id
+                and " ".join(existing.content.strip().lower().split()) == normalized_content
+            ):
+                existing.importance = max(existing.importance, entry.importance)
+                existing.confidence = max(existing.confidence, entry.confidence)
+                existing.updated_at = time.time()
+                self._persist_builtin()
+                return existing.id
         if not entry.id:
             import uuid
             entry.id = uuid.uuid4().hex[:12]
@@ -118,6 +139,11 @@ class LongTermMemory:
                     "type": entry.type,
                     "importance": entry.importance,
                     "source_session": entry.source_session or "",
+                    "source": entry.source,
+                    "user_id": entry.user_id,
+                    "project_id": entry.project_id,
+                    "tags": json.dumps(entry.tags, ensure_ascii=False),
+                    "confidence": entry.confidence,
                     "created_at": entry.created_at,
                 }],
             )
@@ -154,37 +180,101 @@ class LongTermMemory:
         self._persist_builtin()
         return True
 
-    async def clear(self):
-        self._storage.clear()
+    async def update(self, entry_id: str, **changes: Any) -> Optional[MemoryEntry]:
+        entry = self._storage.get(entry_id)
+        if not entry:
+            return None
+        allowed = {
+            "content", "type", "importance", "source_session", "source",
+            "user_id", "project_id", "tags", "confidence", "ttl",
+        }
+        for key, value in changes.items():
+            if key in allowed and value is not None:
+                setattr(entry, key, value)
+        entry.updated_at = time.time()
+        await self.save(entry)
+        return entry
+
+    async def clear(self, user_id: str = None, project_id: str = None):
+        if user_id is None and project_id is None:
+            self._storage.clear()
+        else:
+            self._storage = {
+                entry_id: entry
+                for entry_id, entry in self._storage.items()
+                if not (
+                    (user_id is None or entry.user_id == user_id)
+                    and (project_id is None or entry.project_id == project_id)
+                )
+            }
         self._persist_builtin()
         if self._chroma_collection:
             try:
-                # ChromaDB 不支持 clear，删除并重建
-                self._chroma_client.delete_collection("long_term_memory")
-                self._chroma_collection = self._chroma_client.create_collection(
-                    name="long_term_memory",
-                    metadata={"hnsw:space": "cosine"},
-                )
+                if user_id is None and project_id is None:
+                    self._chroma_client.delete_collection("long_term_memory")
+                    self._chroma_collection = self._chroma_client.create_collection(
+                        name="long_term_memory",
+                        metadata={"hnsw:space": "cosine"},
+                    )
+                else:
+                    where = self._chroma_where(
+                        None, user_id=user_id, project_id=project_id
+                    )
+                    self._chroma_collection.delete(where=where)
             except Exception:
                 pass
 
     # ── 检索 ──
 
-    async def search(self, query: str, limit: int = None,
-                      memory_type: str = None) -> list[MemoryEntry]:
+    async def search(
+        self,
+        query: str,
+        limit: int = None,
+        memory_type: str = None,
+        user_id: str = None,
+        project_id: str = None,
+    ) -> list[MemoryEntry]:
         """搜索记忆"""
         limit = limit or self._max_retrieved
 
         if self._backend == "chromadb" and self._chroma_collection:
-            return await self._search_chromadb(query, limit, memory_type)
+            return await self._search_chromadb(
+                query, limit, memory_type, user_id, project_id
+            )
         else:
-            return await self._search_builtin(query, limit, memory_type)
+            return await self._search_builtin(
+                query, limit, memory_type, user_id, project_id
+            )
 
-    async def _search_chromadb(self, query: str, limit: int,
-                                memory_type: str = None) -> list[MemoryEntry]:
-        where = None
+    @staticmethod
+    def _chroma_where(
+        memory_type: str = None,
+        *,
+        user_id: str = None,
+        project_id: str = None,
+    ) -> Optional[dict]:
+        filters = []
         if memory_type:
-            where = {"type": memory_type}
+            filters.append({"type": memory_type})
+        if user_id:
+            filters.append({"user_id": user_id})
+        if project_id:
+            filters.append({"project_id": project_id})
+        if not filters:
+            return None
+        return filters[0] if len(filters) == 1 else {"$and": filters}
+
+    async def _search_chromadb(
+        self,
+        query: str,
+        limit: int,
+        memory_type: str = None,
+        user_id: str = None,
+        project_id: str = None,
+    ) -> list[MemoryEntry]:
+        where = self._chroma_where(
+            memory_type, user_id=user_id, project_id=project_id
+        )
 
         results = self._chroma_collection.query(
             query_texts=[query],
@@ -203,20 +293,36 @@ class LongTermMemory:
                         content=results["documents"][0][i] if results["documents"] else "",
                         type=meta.get("type", "fact"),
                         importance=meta.get("importance", 0.5),
+                        source_session=meta.get("source_session") or None,
+                        source=meta.get("source", "manual"),
+                        user_id=meta.get("user_id", "local"),
+                        project_id=meta.get("project_id", "default"),
+                        tags=json.loads(meta.get("tags", "[]")),
+                        confidence=float(meta.get("confidence", 1.0)),
                     )
                     self._storage[mid] = entry
                 entries.append(entry)
 
         return self._apply_decay(entries)
 
-    async def _search_builtin(self, query: str, limit: int,
-                               memory_type: str = None) -> list[MemoryEntry]:
+    async def _search_builtin(
+        self,
+        query: str,
+        limit: int,
+        memory_type: str = None,
+        user_id: str = None,
+        project_id: str = None,
+    ) -> list[MemoryEntry]:
         """内置关键词匹配 + 时间衰减"""
         query_lower = query.lower()
         scored = []
 
         for entry in self._storage.values():
             if memory_type and entry.type != memory_type:
+                continue
+            if user_id and entry.user_id != user_id:
+                continue
+            if project_id and entry.project_id != project_id:
                 continue
 
             # 简单关键词匹配得分
@@ -267,6 +373,24 @@ class LongTermMemory:
     @property
     def count(self) -> int:
         return len(self._storage)
+
+    def list_entries(
+        self,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        user_id: str = None,
+        project_id: str = None,
+        memory_type: str = None,
+    ) -> list[MemoryEntry]:
+        entries = [
+            entry for entry in self._storage.values()
+            if (not user_id or entry.user_id == user_id)
+            and (not project_id or entry.project_id == project_id)
+            and (not memory_type or entry.type == memory_type)
+        ]
+        entries.sort(key=lambda entry: entry.updated_at, reverse=True)
+        return entries[offset:offset + limit]
 
     def stats(self) -> dict:
         types = {}

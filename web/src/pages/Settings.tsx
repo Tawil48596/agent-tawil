@@ -226,6 +226,8 @@ export function Settings() {
                 <p className="text-sm">{m.content}</p>
                 <p className="text-xs text-[#8b8fa3] mt-2">
                   {m.type} · 重要性 {Number(m.importance ?? 0.5).toFixed(1)}
+                  {m.source ? ` · ${m.source}` : ""}
+                  {m.project_id && m.project_id !== "default" ? ` · 项目 ${m.project_id}` : ""}
                 </p>
               </div>
               <button onClick={async () => {
