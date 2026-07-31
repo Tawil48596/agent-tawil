@@ -37,7 +37,10 @@ class MCPGateway:
         self._discovery = ServiceDiscovery()
         self._tool_call_timeout = mcp_cfg.get("tool_call_timeout", 30)
         security_cfg = dict(mcp_cfg.get("security", {}))
-        security_cfg.setdefault("require_approval", ["github_clone_repo"])
+        security_cfg.setdefault("require_approval", [
+            "github_clone_repo", "github_create_branch", "github_update_file",
+            "github_create_pull_request",
+        ])
         self._security = MCPSecurity(security_cfg)
 
     async def register_server(self, info: MCPServerInfo, adapter: Any = None) -> str:

@@ -186,6 +186,41 @@ class GitHubMCPAdapter:
                     "required": ["owner", "repo"],
                 },
             },
+            {
+                "name": "github_create_branch",
+                "description": "Create a GitHub branch from an existing ref",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"owner": {"type": "string"}, "repo": {"type": "string"},
+                                   "branch": {"type": "string"},
+                                   "from_ref": {"type": "string", "default": "main"}},
+                    "required": ["owner", "repo", "branch"],
+                },
+            },
+            {
+                "name": "github_update_file",
+                "description": "Create or update a UTF-8 file and commit it",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"owner": {"type": "string"}, "repo": {"type": "string"},
+                                   "path": {"type": "string"}, "content": {"type": "string"},
+                                   "message": {"type": "string"}, "branch": {"type": "string"},
+                                   "sha": {"type": "string"}},
+                    "required": ["owner", "repo", "path", "content", "message", "branch"],
+                },
+            },
+            {
+                "name": "github_create_pull_request",
+                "description": "Open a pull request for a prepared branch",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"owner": {"type": "string"}, "repo": {"type": "string"},
+                                   "title": {"type": "string"}, "head": {"type": "string"},
+                                   "base": {"type": "string", "default": "main"},
+                                   "body": {"type": "string"}, "draft": {"type": "boolean"}},
+                    "required": ["owner", "repo", "title", "head"],
+                },
+            },
         ]
 
     # ── 工具调用入口 ──
@@ -241,6 +276,21 @@ class GitHubMCPAdapter:
             return {"error": "Resource not found"}
         resp.raise_for_status()
         return resp.json()
+
+    async def _gh_write(self, method: str, path: str, payload: dict) -> dict:
+        if not await self._rate_limiter.acquire():
+            return {"error": "GitHub API rate limit exceeded"}
+        client = await self._get_client()
+        response = await client.request(method, path, json=payload)
+        if response.status_code == 404:
+            return {"error": "Resource not found"}
+        if response.status_code in (401, 403):
+            return {"error": "GitHub write access denied"}
+        if response.status_code == 422:
+            detail = response.json().get("message", "GitHub rejected the operation")
+            return {"error": detail}
+        response.raise_for_status()
+        return response.json()
 
     # ── 工具实现 ──
 
@@ -387,3 +437,43 @@ class GitHubMCPAdapter:
             "path": target,
             "output": stdout.decode()[:500] if proc.returncode == 0 else stderr.decode()[:500],
         }
+
+    async def _tool_github_create_branch(self, owner: str, repo: str, branch: str,
+                                          from_ref: str = "main") -> dict:
+        ref = await self._gh_get(f"/repos/{owner}/{repo}/git/ref/heads/{from_ref}")
+        if "error" in ref:
+            return ref
+        result = await self._gh_write("POST", f"/repos/{owner}/{repo}/git/refs", {
+            "ref": f"refs/heads/{branch}", "sha": ref["object"]["sha"],
+        })
+        if "error" in result:
+            return result
+        return {"branch": branch, "sha": result.get("object", {}).get("sha"),
+                "url": result.get("url")}
+
+    async def _tool_github_update_file(self, owner: str, repo: str, path: str,
+                                        content: str, message: str, branch: str,
+                                        sha: str = "") -> dict:
+        import base64
+        payload = {"message": message,
+                   "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+                   "branch": branch}
+        if sha:
+            payload["sha"] = sha
+        result = await self._gh_write("PUT", f"/repos/{owner}/{repo}/contents/{path}", payload)
+        if "error" in result:
+            return result
+        return {"path": path, "branch": branch,
+                "commit_sha": result.get("commit", {}).get("sha"),
+                "url": result.get("content", {}).get("html_url")}
+
+    async def _tool_github_create_pull_request(self, owner: str, repo: str, title: str,
+                                                head: str, base: str = "main",
+                                                body: str = "", draft: bool = False) -> dict:
+        result = await self._gh_write("POST", f"/repos/{owner}/{repo}/pulls", {
+            "title": title, "head": head, "base": base, "body": body, "draft": draft,
+        })
+        if "error" in result:
+            return result
+        return {"number": result.get("number"), "url": result.get("html_url"),
+                "state": result.get("state"), "draft": result.get("draft", draft)}
