@@ -26,6 +26,7 @@ class ModelInfo:
     context_length: int
     supports_vision: bool = False
     supports_tools: bool = True
+    supports_reasoning_effort: bool = False
     cost_per_1k_input: float = 0.0
     cost_per_1k_output: float = 0.0
     tags: set[str] = field(default_factory=set)  # reasoning, coding, fast, ...
@@ -52,6 +53,7 @@ class RouteResult:
     context_length: int
     supports_vision: bool
     supports_tools: bool
+    supports_reasoning_effort: bool
     routed_by: str  # "override" | "task" | "default" | "fallback"
 
 
@@ -95,6 +97,18 @@ class ModelRouter:
 
         # 内置模型注册表
         self._register_model(ModelInfo(
+            name="gpt-5.1", provider="openai",
+            context_length=400000, supports_vision=True,
+            supports_reasoning_effort=True,
+            tags={"reasoning", "coding", "vision"},
+        ))
+        self._register_model(ModelInfo(
+            name="gpt-5-mini", provider="openai",
+            context_length=400000, supports_vision=True,
+            supports_reasoning_effort=True,
+            tags={"reasoning", "coding", "summarization", "fast"},
+        ))
+        self._register_model(ModelInfo(
             name="gpt-4o", provider="openai",
             context_length=128000, supports_vision=True,
             cost_per_1k_input=0.0025, cost_per_1k_output=0.01,
@@ -120,9 +134,16 @@ class ModelRouter:
         ))
         self._register_model(ModelInfo(
             name="deepseek-v4-pro", provider="deepseek",
-            context_length=128000, supports_vision=False,
+            context_length=1000000, supports_vision=False,
+            supports_reasoning_effort=True,
             cost_per_1k_input=0.00014, cost_per_1k_output=0.00028,
             tags={"reasoning", "coding"},
+        ))
+        self._register_model(ModelInfo(
+            name="deepseek-v4-flash", provider="deepseek",
+            context_length=1000000, supports_vision=False,
+            supports_reasoning_effort=True,
+            tags={"reasoning", "coding", "summarization", "fast"},
         ))
         self._register_model(ModelInfo(
             name="text-embedding-3-small", provider="openai",
@@ -183,6 +204,7 @@ class ModelRouter:
                 "context_length": info.context_length,
                 "supports_vision": info.supports_vision,
                 "supports_tools": info.supports_tools,
+                "supports_reasoning_effort": info.supports_reasoning_effort,
                 "cost_per_1k_input": info.cost_per_1k_input,
                 "cost_per_1k_output": info.cost_per_1k_output,
                 "tags": sorted(info.tags),
@@ -264,6 +286,7 @@ class ModelRouter:
             context_length=info.context_length,
             supports_vision=info.supports_vision,
             supports_tools=info.supports_tools,
+            supports_reasoning_effort=info.supports_reasoning_effort,
             routed_by=routed_by,
         )
 
