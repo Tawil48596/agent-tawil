@@ -23,7 +23,7 @@ export function Sidebar() {
           <span className="h-9 w-9 rounded-xl bg-gradient-to-br from-[#8aa7ff] to-[#7b5cff] flex items-center justify-center shadow-lg shadow-[#6c8cff]/20"><Sparkles size={17} /></span>
           <div className="leading-tight">
             <h1 className="text-sm font-semibold tracking-tight">Agent Studio</h1>
-            <p className="text-[10px] text-[#9ca9c9] mt-0.5">AI workspace · v0.1.0</p>
+            <p className="text-[10px] text-[#9ca9c9] mt-0.5">AI workspace · v0.1.1</p>
           </div>
         </div>
       </div>

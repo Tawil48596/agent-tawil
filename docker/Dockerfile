@@ -10,7 +10,7 @@ RUN npm run build
 FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="AI Agent Platform"
-LABEL org.opencontainers.image.version="0.1.0"
+LABEL org.opencontainers.image.version="0.1.1"
 LABEL org.opencontainers.image.description="通用 AI Agent 平台"
 
 # System dependencies

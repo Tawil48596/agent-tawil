@@ -4,17 +4,27 @@ import { BarChart3, TrendingUp, DollarSign, Zap, MessageSquare, Wrench, RefreshC
 export function AnalyticsDashboard() {
   const [stats, setStats] = useState<any>({});
   const [models, setModels] = useState<any[]>([]);
+  const [error, setError] = useState("");
   const COLORS = ["#6c8cff","#4ade80","#fbbf24","#f87171","#c084fc","#fb923c","#22d3ee","#a78bfa"];
 
   const load = async () => {
+    setError("");
     try {
       const [sr, mr] = await Promise.all([
-        fetch("/api/v1/tools/stats").then(r => r.json()),
-        fetch("/api/v1/chat/models").then(r => r.json()),
+        fetch("/api/v1/tools/stats").then(r => {
+          if (!r.ok) throw new Error(`工具统计加载失败 (${r.status})`);
+          return r.json();
+        }),
+        fetch("/api/v1/chat/models").then(r => {
+          if (!r.ok) throw new Error(`模型列表加载失败 (${r.status})`);
+          return r.json();
+        }),
       ]);
       setStats(sr);
       setModels((mr.models || []).slice(0, 8));
-    } catch {}
+    } catch (e: any) {
+      setError(e?.message || "仪表板数据加载失败");
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -32,6 +42,7 @@ export function AnalyticsDashboard() {
         <h2 className="text-lg font-semibold flex items-center gap-2"><BarChart3 size={20} /> 用量仪表板</h2>
         <button onClick={load} className="text-[#8b8fa3] hover:text-[#e1e4ea] p-1"><RefreshCw size={18} /></button>
       </div>
+      {error && <div className="mb-4 rounded-lg border border-[#f87171]/40 bg-[#3d1515] px-4 py-2 text-sm text-[#fca5a5]">{error}</div>}
 
       <div className="grid grid-cols-4 gap-4 mb-6">
         {kpis.map((k) => (

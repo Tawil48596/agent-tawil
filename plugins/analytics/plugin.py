@@ -10,7 +10,7 @@ class AnalyticsPlugin(PluginProtocol):
 
     @property
     def version(self) -> str:
-        return "0.1.0"
+        return "0.1.1"
 
     async def on_load(self, container):
         from plugins.analytics.collector import UsageCollector

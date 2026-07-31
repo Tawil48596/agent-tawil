@@ -1,5 +1,7 @@
 """协议定义 — 所有插件必须实现的抽象接口"""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Any, Callable, AsyncIterator
 
@@ -15,7 +17,7 @@ class PluginProtocol(ABC):
 
     @property
     def version(self) -> str:
-        return "0.1.0"
+        return "0.1.1"
 
     @property
     def dependencies(self) -> list[str]:

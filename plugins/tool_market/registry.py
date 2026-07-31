@@ -21,7 +21,7 @@ class ToolDef:
     requires_env: list[str] = field(default_factory=list)
     requires_packages: list[str] = field(default_factory=list)
     requires_system: list[str] = field(default_factory=list)
-    version: str = "0.1.0"
+    version: str = "0.1.1"
     author: str = ""
     tags: list[str] = field(default_factory=list)
     is_dangerous: bool = False

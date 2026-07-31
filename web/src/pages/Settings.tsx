@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Settings as SettingsIcon, User, Cpu, Brain, Key, Save, Eye, EyeOff, Trash2, Plus, Globe, X } from "lucide-react";
+import { useChatStore } from "@/stores/chatStore";
 
 interface ProviderConfig {
   name: string;
@@ -24,7 +25,11 @@ export function Settings() {
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [editValues, setEditValues] = useState<Record<string, { key: string; url: string }>>({});
   const [memories, setMemories] = useState<any[]>([]);
-  const [theme, setTheme] = useState("dark");
+  const [theme, setTheme] = useState(() => localStorage.getItem("ai-agent-theme") || "dark");
+  const [notice, setNotice] = useState("");
+  const model = useChatStore((s) => s.model);
+  const models = useChatStore((s) => s.models);
+  const setModel = useChatStore((s) => s.setModel);
   const [newProvider, setNewProvider] = useState({ name: "", baseUrl: "" });
   const [showAdd, setShowAdd] = useState(false);
 
@@ -35,6 +40,11 @@ export function Settings() {
     providers.forEach(p => { ev[p.name] = { key: p.apiKey, url: p.baseUrl }; });
     setEditValues(ev);
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("ai-agent-theme", theme);
+  }, [theme]);
 
   const getEditVal = (name: string, field: "key" | "url") => {
     if (editValues[name]?.[field] !== undefined) return editValues[name][field];
@@ -58,6 +68,7 @@ export function Settings() {
       p.name === name ? { ...p, apiKey: editValues[name]?.key ?? p.apiKey, baseUrl: editValues[name]?.url ?? p.baseUrl } : p
     );
     localStorage.setItem("ai-agent-providers", JSON.stringify(updated));
+    setNotice(`${name} 已保存在当前浏览器。服务端调用仍需配置对应环境变量并重启。`);
   };
 
   const addProvider = () => {
@@ -106,23 +117,22 @@ export function Settings() {
           </div>
           <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
             <label className="text-sm font-medium block mb-2">默认模型</label>
-            <select className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-4 py-2.5 text-sm text-[#e1e4ea]">
-              <option>自动路由</option>
-              <option>gpt-4o</option>
-              <option>gpt-4o-mini</option>
-              <option>claude-sonnet-4</option>
-              <option>claude-haiku-4-5</option>
-              <option>deepseek-v4-pro</option>
-              {providers.filter(p => !DEFAULT_PROVIDERS.find(d => d.name === p.name)).map(p => (
-                <option key={p.name}>{p.name}</option>
-              ))}
+            <select value={model} onChange={(e) => { setModel(e.target.value); setNotice("默认模型已保存"); }}
+              className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-4 py-2.5 text-sm text-[#e1e4ea]">
+              <option value="">自动路由</option>
+              {models.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
             </select>
           </div>
+          {notice && <div className="rounded-lg border border-[#4ade80]/30 bg-[#12301d] px-4 py-2 text-xs text-[#86efac]">{notice}</div>}
         </div>
       )}
 
       {tab === "models" && (
         <div className="max-w-2xl space-y-4">
+          <div className="rounded-lg border border-[#fbbf24]/30 bg-[#382b10] px-4 py-3 text-xs text-[#fde68a]">
+            浏览器保存不会修改正在运行的服务。要让模型真正可用，请在服务端配置 OPENAI_API_KEY、ANTHROPIC_API_KEY 或 DEEPSEEK_API_KEY 后重启。
+          </div>
+          {notice && <div className="rounded-lg border border-[#4ade80]/30 bg-[#12301d] px-4 py-2 text-xs text-[#86efac]">{notice}</div>}
           {providers.map((p) => {
             const hasKey = !!(editValues[p.name]?.key ?? p.apiKey);
             const hasUrl = !!(editValues[p.name]?.url ?? p.baseUrl);

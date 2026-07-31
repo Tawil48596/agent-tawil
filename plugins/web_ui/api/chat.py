@@ -179,6 +179,25 @@ async def fork_session(session_id: str, body: dict, request: Request):
     """从指定消息 fork 分支"""
     at_message_id = body.get("at_message_id", 0)
     new_title = body.get("title")
+    if session_id in _sessions:
+        import uuid
+        from datetime import datetime
+
+        branch_id = uuid.uuid4().hex[:12]
+        parent = _sessions[session_id]
+        _sessions[branch_id] = {
+            "id": branch_id,
+            "title": new_title or f"{parent['title']} (分支)",
+            "source": parent["source"],
+            "parent_id": session_id,
+            "created_at": datetime.now().isoformat(),
+        }
+        # Web sessions currently use the in-memory store and messages do not
+        # expose stable database IDs. The UI forks at the latest visible
+        # message, so copying the complete conversation is deterministic.
+        _messages[branch_id] = [dict(message) for message in _messages.get(session_id, [])]
+        return {"branch_id": branch_id}
+
     store = getattr(request.app.state, "session_store", None)
     if store:
         from plugins.conversation.session_branch import SessionBranch

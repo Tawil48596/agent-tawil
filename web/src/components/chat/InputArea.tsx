@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { ChangeEvent, useRef, useState } from "react";
 import { Send, StopCircle, Paperclip } from "lucide-react";
 import { useChatStore } from "@/stores/chatStore";
 
@@ -6,6 +6,25 @@ export function InputArea() {
   const [text, setText] = useState("");
   const streaming = useChatStore((s) => s.streaming);
   const sendMessage = useChatStore((s) => s.sendMessage);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [attachmentName, setAttachmentName] = useState("");
+
+  const attachFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.size > 1024 * 1024) {
+      useChatStore.setState({ error: "附件不能超过 1 MB" });
+      return;
+    }
+    try {
+      const content = await file.text();
+      setText((current) => `${current}${current ? "\n\n" : ""}附件：${file.name}\n\`\`\`\n${content}\n\`\`\``);
+      setAttachmentName(file.name);
+    } catch {
+      useChatStore.setState({ error: "当前仅支持文本类附件" });
+    }
+  };
 
   const handleSend = () => {
     const trimmed = text.trim();
@@ -17,7 +36,10 @@ export function InputArea() {
   return (
     <div className="px-6 pb-5 pt-3 shrink-0">
       <div className="flex gap-3 items-center max-w-4xl mx-auto rounded-2xl border border-white/10 bg-[#18233b]/75 px-2 py-2 shadow-2xl shadow-black/10 focus-within:ring-2 focus-within:ring-[#7899ff]/35">
-        <button className="text-[#9ca9c9] hover:text-white hover:bg-white/5 rounded-xl p-2 transition" title="附件">
+        <input ref={fileRef} type="file" className="hidden"
+          accept=".txt,.md,.json,.yaml,.yml,.toml,.csv,.py,.js,.jsx,.ts,.tsx,.css,.html,.go,.rs,.java"
+          onChange={attachFile} />
+        <button onClick={() => fileRef.current?.click()} className="text-[#9ca9c9] hover:text-white hover:bg-white/5 rounded-xl p-2 transition" title={attachmentName || "添加文本附件"}>
           <Paperclip size={18} />
         </button>
         <input

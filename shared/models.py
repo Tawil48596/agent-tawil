@@ -73,7 +73,7 @@ class ToolDefinition(BaseModel):
     requires_env: list[str] = Field(default_factory=list)
     requires_packages: list[str] = Field(default_factory=list)
     requires_system: list[str] = Field(default_factory=list)
-    version: str = "0.1.0"
+    version: str = "0.1.1"
     author: str = ""
     tags: list[str] = Field(default_factory=list)
     is_dangerous: bool = False
