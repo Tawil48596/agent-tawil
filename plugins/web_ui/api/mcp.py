@@ -47,6 +47,21 @@ async def remove_server(server_id: str, request: Request):
     return {"ok": True}
 
 
+@router.post("/servers/{server_id}/refresh")
+async def refresh_server(server_id: str, request: Request):
+    try:
+        info = await request.app.state.mcp_gateway.refresh_server(server_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True, "id": info.id, "status": info.status,
+            "tools_count": info.tools_count}
+
+
+@router.get("/health")
+async def gateway_health(request: Request):
+    return request.app.state.mcp_gateway.health()
+
+
 @router.get("/tools")
 async def list_tools(request: Request):
     """列出所有 MCP 工具"""
@@ -58,7 +73,8 @@ async def list_tools(request: Request):
 async def call_tool(tool_name: str, body: dict, request: Request):
     """调用 MCP 工具"""
     gw = request.app.state.mcp_gateway
-    result = await gw.call_tool(tool_name, body.get("arguments", {}))
+    result = await gw.call_tool(tool_name, body.get("arguments", {}),
+                                approved=body.get("approved", False))
     return result
 
 

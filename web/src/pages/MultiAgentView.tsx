@@ -43,6 +43,11 @@ export function MultiAgentView() {
     loadAll();
   };
 
+  const retryPlan = async (id: string) => {
+    await fetch(`/api/v1/agents/tasks/${id}/retry`, { method: "POST" });
+    loadAll();
+  };
+
   return (
     <div className="p-6 h-full overflow-y-auto">
       <div className="flex items-center justify-between mb-6">
@@ -97,6 +102,10 @@ export function MultiAgentView() {
                 {p.status === "running" && (
                   <button onClick={(e) => { e.stopPropagation(); cancelPlan(p.id); }}
                     className="text-xs bg-[#f87171] text-white px-3 py-1 rounded flex items-center gap-1"><Square size={12} /> 取消</button>
+                )}
+                {(p.status === "failed" || p.status === "cancelled") && (
+                  <button onClick={(e) => { e.stopPropagation(); retryPlan(p.id); }}
+                    className="text-xs bg-[#fbbf24] text-black px-3 py-1 rounded flex items-center gap-1"><RefreshCw size={12} /> 重试</button>
                 )}
               </div>
             </div>

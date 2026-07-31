@@ -23,6 +23,7 @@ import uvicorn
 import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from shared.version import APP_VERSION
 
 # ── Config loading ──
 
@@ -98,11 +99,24 @@ logger = structlog.get_logger()
 
 def create_app(config: dict[str, Any]) -> FastAPI:
     server_cfg = config.get("server", {})
+    from plugins.security.baseline import enforce_production_config
+    enforce_production_config(config)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         """应用生命周期管理"""
-        logger.info("Starting AI Agent Platform...", version="0.2.0")
+        logger.info("Starting AI Agent Platform...", version=APP_VERSION)
+        from core.di_container import DIContainer
+        from core.event_bus import EventBus
+        from core.plugin_manager import PluginManager
+        container = DIContainer()
+        event_bus = EventBus()
+        plugin_manager = PluginManager(["plugins"], event_bus=event_bus, container=container)
+        container.register("config", config)
+        container.register("event_bus", event_bus)
+        app.state.container = container
+        app.state.event_bus = event_bus
+        app.state.plugin_manager = plugin_manager
 
         # ── Phase 1: Agent 引擎 ──
         from plugins.agent_engine.model_router import ModelRouter
@@ -255,14 +269,20 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         # ── Phase 4: 工具市场 ──
         from plugins.tool_market.registry import ToolRegistry, ToolDef
         from plugins.tool_market.marketplace import Marketplace, MarketplaceEntry
+        from plugins.tool_market.package_store import ToolPackageStore
         from plugins.generative_ui.schema_mapper import SchemaMapper
 
         tool_registry = ToolRegistry()
         marketplace = Marketplace(tool_registry)
+        package_store = ToolPackageStore(
+            config.get("tool_market", {}).get("package_path", "data/tool_packages"),
+            os.environ.get("TOOL_PACKAGE_SIGNING_KEY", ""),
+        )
         schema_mapper = SchemaMapper()
 
         app.state.tool_registry = tool_registry
         app.state.marketplace = marketplace
+        app.state.tool_package_store = package_store
         app.state.schema_mapper = schema_mapper
 
         # 注册内置工具
@@ -315,11 +335,11 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
         # 种子市场数据
         marketplace.publish(MarketplaceEntry(
-            name="web_search", description="DuckDuckGo 搜索", version="0.2.0",
+            name="web_search", description="DuckDuckGo 搜索", version=APP_VERSION,
             author="builtin", tags=["search", "builtin"], downloads=1000,
         ))
         marketplace.publish(MarketplaceEntry(
-            name="file_read", description="文件读取", version="0.2.0",
+            name="file_read", description="文件读取", version=APP_VERSION,
             author="builtin", tags=["file", "builtin"], downloads=800,
         ))
 
@@ -340,7 +360,13 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         from plugins.checkpoint.checkpoint_store import CheckpointStore, RecoveryManager
         from plugins.hitl.hitl_manager import HITLManager
 
-        orchestrator = Orchestrator(agent_engine=engine, max_workers=5)
+        multi_cfg = config.get("multi_agent", {})
+        orchestrator = Orchestrator(
+            agent_engine=engine,
+            max_workers=multi_cfg.get("max_workers", 5),
+            storage_path=multi_cfg.get("storage_path", "data/orchestration/plans.json"),
+            max_tasks_per_plan=multi_cfg.get("max_tasks_per_plan", 20),
+        )
         message_bus = MessageBus()
         blackboard = Blackboard()
         checkpoint_store = CheckpointStore(config)
@@ -386,14 +412,20 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         from plugins.evals.runner import EvalRunner
         from plugins.evals.trace_viewer import TraceCollector
         from plugins.messaging.platforms.telegram import TelegramAdapter
+        from plugins.messaging.gateway import MessagingGateway
 
         eval_runner = EvalRunner()
         trace_collector = TraceCollector()
         telegram_bot = TelegramAdapter()
+        messaging_gateway = MessagingGateway(
+            config.get("messaging", {}),
+            config.get("messaging", {}).get("state_path", "data/messaging/sessions.json"),
+        )
 
         app.state.eval_runner = eval_runner
         app.state.trace_collector = trace_collector
         app.state.telegram_bot = telegram_bot
+        app.state.messaging_gateway = messaging_gateway
 
         if telegram_bot.is_configured:
             await telegram_bot.start()
@@ -416,16 +448,23 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
         # ── Graceful shutdown ──
         logger.info("Shutting down...")
+        await plugin_manager.disable_all()
         await task_queue.stop()
         session_store.close()
         logger.info("Goodbye.")
 
     app = FastAPI(
         title="AI Agent Platform",
-        version="0.2.0",
+        version=APP_VERSION,
         description="通用 AI Agent 平台 — 多智能体协作、MCP 网关、RAG 检索增强",
         lifespan=lifespan,
     )
+
+    from plugins.observability.http_middleware import ObservabilityMiddleware
+    from plugins.observability.metrics import MetricsCollector
+    metrics_collector = MetricsCollector()
+    app.state.metrics_collector = metrics_collector
+    app.add_middleware(ObservabilityMiddleware, metrics=metrics_collector)
 
     # CORS
     app.add_middleware(
@@ -464,6 +503,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     from plugins.web_ui.api.analytics import router as analytics_api_router
     from plugins.web_ui.api.github import router as github_api_router
     from plugins.web_ui.api.runtime_config import router as runtime_config_router
+    from plugins.web_ui.api.messaging import router as messaging_router
     app.include_router(chat_router)
     app.include_router(mcp_router)
     app.include_router(rag_router)
@@ -476,6 +516,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     app.include_router(analytics_api_router)
     app.include_router(github_api_router)
     app.include_router(runtime_config_router)
+    app.include_router(messaging_router)
 
     # ── Health check (must be before SPA fallback) ──
 
@@ -483,9 +524,24 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     async def health():
         return {
             "status": "ok",
-            "version": "0.2.0",
+            "version": APP_VERSION,
             "config_loaded": bool(config),
+            "plugins": app.state.plugin_manager.health(),
         }
+
+    @app.get("/ready")
+    async def ready():
+        checks = {
+            "config": bool(config),
+            "mcp": app.state.mcp_gateway.health()["status"] in ("ok", "degraded"),
+            "session_store": hasattr(app.state, "session_store"),
+            "agent_engine": hasattr(app.state, "agent_engine"),
+        }
+        return {"status": "ready" if all(checks.values()) else "not_ready", "checks": checks}
+
+    @app.get("/metrics")
+    async def metrics():
+        return metrics_collector.get_all()
 
     # ── Config inspection (dev only) ──
 
