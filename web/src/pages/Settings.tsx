@@ -198,21 +198,47 @@ export function Settings() {
       )}
 
       {tab === "memory" && (
-        <div className="max-w-lg space-y-2">
-          <p className="text-xs text-[#8b8fa3] mb-3">{memories.length} 条长期记忆</p>
+        <div className="max-w-2xl space-y-3">
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div>
+              <h3 className="text-sm font-semibold">记忆</h3>
+              <p className="text-xs text-[#8b8fa3] mt-1">
+                这里只保存 Agent 可跨对话使用的长期信息；普通聊天记录在“全部对话”中管理。
+              </p>
+            </div>
+            {memories.length > 0 && (
+              <button
+                onClick={async () => {
+                  if (!window.confirm("清空全部长期记忆？此操作无法撤销。")) return;
+                  await fetch("/api/v1/memory", { method: "DELETE" });
+                  setMemories([]);
+                }}
+                className="text-xs text-[#f87171] border border-[#f87171]/30 hover:bg-[#f87171]/10 px-3 py-2 rounded-lg shrink-0"
+              >
+                清空记忆
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-[#8b8fa3]">{memories.length} 条长期记忆</p>
           {memories.map((m: any, i: number) => (
-            <div key={m.id || i} className="bg-[#1a1d27] border border-[#2a2d3a] rounded-lg p-3 flex items-start justify-between gap-3">
-              <div>
+            <div key={m.id || i} className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4 flex items-start justify-between gap-3">
+              <div className="min-w-0">
                 <p className="text-sm">{m.content}</p>
-                <p className="text-xs text-[#8b8fa3] mt-1">{m.type} · 重要性: {m.importance?.toFixed(1)}</p>
+                <p className="text-xs text-[#8b8fa3] mt-2">
+                  {m.type} · 重要性 {Number(m.importance ?? 0.5).toFixed(1)}
+                </p>
               </div>
               <button onClick={async () => {
                 await fetch(`/api/v1/memory/${m.id}`, { method: "DELETE" });
                 setMemories(prev => prev.filter(x => x.id !== m.id));
-              }} className="text-[#8b8fa3] hover:text-[#f87171] p-1 shrink-0"><Trash2 size={14} /></button>
+              }} aria-label="删除记忆" className="text-[#8b8fa3] hover:text-[#f87171] p-2 shrink-0"><Trash2 size={14} /></button>
             </div>
           ))}
-          {memories.length === 0 && <p className="text-xs text-[#8b8fa3]">暂无长期记忆</p>}
+          {memories.length === 0 && (
+            <div className="border border-dashed border-[#2a2d3a] rounded-xl py-10 text-center text-xs text-[#8b8fa3]">
+              暂无长期记忆
+            </div>
+          )}
         </div>
       )}
     </div>

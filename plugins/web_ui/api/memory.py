@@ -8,7 +8,25 @@ router = APIRouter(prefix="/api/v1/memory", tags=["memory"])
 @router.get("")
 async def list_memory(request: Request, limit: int = 20):
     ltm = request.app.state.long_term_memory
-    return {"entries": [{"id": k, "content": e.content, "type": e.type} for k, e in list(ltm._storage.items())[:limit]]}
+    entries = sorted(
+        ltm._storage.values(),
+        key=lambda entry: entry.created_at,
+        reverse=True,
+    )[:limit]
+    return {
+        "entries": [
+            {
+                "id": entry.id,
+                "content": entry.content,
+                "type": entry.type,
+                "importance": entry.importance,
+                "source_session": entry.source_session,
+                "created_at": entry.created_at,
+            }
+            for entry in entries
+        ],
+        "total": ltm.count,
+    }
 
 
 @router.post("")
@@ -25,6 +43,13 @@ async def delete_memory(entry_id: str, request: Request):
     ltm = request.app.state.long_term_memory
     ok = await ltm.delete(entry_id)
     return {"ok": ok}
+
+
+@router.delete("")
+async def clear_memory(request: Request):
+    ltm = request.app.state.long_term_memory
+    await ltm.clear()
+    return {"ok": True}
 
 
 @router.post("/search")

@@ -4,6 +4,8 @@ export interface Session {
   source: string;
   created_at: string;
   updated_at: string;
+  message_count?: number;
+  preview?: string;
   metadata?: Record<string, any>;
 }
 

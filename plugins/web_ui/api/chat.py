@@ -35,7 +35,7 @@ class SessionUpdate(BaseModel):
     title: Optional[str] = None
 
 
-# ── 内存存储 (Phase 1 — 后续替换为 SQLite) ──
+# ── Storage helpers ──
 
 _sessions: dict[str, dict] = {}
 _messages: dict[str, list[dict]] = {}
@@ -93,16 +93,47 @@ def _append_user_message(session_id: str, content: str, retry: bool) -> list[dic
     return session_messages
 
 
+def _store(request: Request):
+    return getattr(request.app.state, "session_store", None)
+
+
+def _history(request: Request, session_id: str) -> list[dict]:
+    store = _store(request)
+    if store:
+        return [
+            {"role": message["role"], "content": message.get("content", "")}
+            for message in store.get_messages(session_id)
+        ]
+    return list(_messages.get(session_id, []))
+
+
+def _session_exists(request: Request, session_id: str) -> bool:
+    store = _store(request)
+    return bool(store.get_session(session_id)) if store else session_id in _sessions
+
+
+def _auto_title(content: str, limit: int = 36) -> str:
+    title = " ".join(content.strip().split())
+    if not title:
+        return "新对话"
+    return title if len(title) <= limit else f"{title[:limit].rstrip()}…"
+
+
 # ── Session endpoints ──
 
 
 @router.post("/sessions")
-async def create_session(body: SessionCreate):
+async def create_session(body: SessionCreate, request: Request):
+    store = _store(request)
+    if store:
+        sid = store.create_session(title=body.title or "新对话", source=body.source)
+        return store.get_session(sid)
+
     import uuid
     sid = uuid.uuid4().hex[:12]
     session = {
         "id": sid,
-        "title": body.title or f"新对话 {sid[:6]}",
+        "title": body.title or "新对话",
         "source": body.source,
         "created_at": __import__("datetime").datetime.now().isoformat(),
     }
@@ -113,7 +144,11 @@ async def create_session(body: SessionCreate):
 
 
 @router.get("/sessions")
-async def list_sessions(limit: int = 50, offset: int = 0):
+async def list_sessions(request: Request, limit: int = 50, offset: int = 0):
+    store = _store(request)
+    if store:
+        items = store.list_sessions(limit=limit, offset=offset)
+        return {"items": items, "total": len(items)}
     sessions = list(_sessions.values())
     return {
         "items": sessions[offset:offset + limit],
@@ -122,14 +157,26 @@ async def list_sessions(limit: int = 50, offset: int = 0):
 
 
 @router.get("/sessions/{session_id}")
-async def get_session(session_id: str):
+async def get_session(session_id: str, request: Request):
+    store = _store(request)
+    if store:
+        session = store.get_session(session_id)
+        if not session:
+            raise HTTPException(404, "Session not found")
+        return session
     if session_id not in _sessions:
         raise HTTPException(404, "Session not found")
     return _sessions[session_id]
 
 
 @router.patch("/sessions/{session_id}")
-async def update_session(session_id: str, body: SessionUpdate):
+async def update_session(session_id: str, body: SessionUpdate, request: Request):
+    store = _store(request)
+    if store:
+        if not store.get_session(session_id):
+            raise HTTPException(404, "Session not found")
+        store.update_session(session_id, title=body.title)
+        return store.get_session(session_id)
     if session_id not in _sessions:
         raise HTTPException(404, "Session not found")
     if body.title:
@@ -138,7 +185,12 @@ async def update_session(session_id: str, body: SessionUpdate):
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str):
+async def delete_session(session_id: str, request: Request):
+    store = _store(request)
+    if store:
+        if not store.delete_session(session_id):
+            raise HTTPException(404, "Session not found")
+        return {"ok": True}
     _sessions.pop(session_id, None)
     _messages.pop(session_id, None)
     _session_usage.pop(session_id, None)
@@ -157,7 +209,7 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
       {"content": "...", "model": "gpt-4o"}
       {"content": "...", model 不传 → 使用默认路由
     """
-    if session_id not in _sessions:
+    if not _session_exists(request, session_id):
         raise HTTPException(404, f"Session {session_id} not found. Create one first.")
 
     # 从 app state 获取 engine（由 plugin 注册）
@@ -168,7 +220,24 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
         raise HTTPException(503, "Agent engine not initialized. Check plugin loading.")
 
     async def event_stream():
-        _append_user_message(session_id, body.content, body.retry)
+        store = _store(request)
+        current_history = _history(request, session_id)
+        last_message = current_history[-1] if current_history else None
+        is_same_pending_message = (
+            body.retry
+            and last_message is not None
+            and last_message.get("role") == "user"
+            and last_message.get("content") == body.content
+        )
+        if not is_same_pending_message:
+            if store:
+                store.add_message(session_id, "user", body.content)
+                session = store.get_session(session_id)
+                if session and session.get("title") in {"", "新对话"}:
+                    store.update_session(session_id, title=_auto_title(body.content))
+            else:
+                _append_user_message(session_id, body.content, body.retry)
+        current_history = _history(request, session_id)[:-1]
 
         yield {"event": "message", "data": json.dumps({"type": "thinking", "content": "思考中..."}, ensure_ascii=False)}
 
@@ -194,7 +263,7 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
         try:
             async for event in engine.run_stream(
                 user_message=body.content,
-                history=_messages.get(session_id, [])[:-1],
+                history=current_history,
                 enabled_tools=enabled_tools,
                 override_model=body.model,
                 task_type=task_type,
@@ -202,15 +271,27 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
             ):
                 if event.get("type") == "done" and event.get("content"):
                     usage = event.get("usage") or {}
-                    session_usage = _add_session_usage(session_id, usage)
+                    if store:
+                        store.add_message(
+                            session_id,
+                            "assistant",
+                            event["content"],
+                            token_count=int(usage.get("total_tokens", 0) or 0),
+                            model=event.get("model"),
+                            provider=event.get("provider"),
+                            usage=usage,
+                        )
+                        session_usage = store.get_session_usage(session_id)
+                    else:
+                        session_usage = _add_session_usage(session_id, usage)
+                        _messages.setdefault(session_id, []).append({
+                            "role": "assistant",
+                            "content": event["content"],
+                            "model": event.get("model"),
+                            "provider": event.get("provider"),
+                            "usage": usage,
+                        })
                     event["session_usage"] = session_usage
-                    _messages.setdefault(session_id, []).append({
-                        "role": "assistant",
-                        "content": event["content"],
-                        "model": event.get("model"),
-                        "provider": event.get("provider"),
-                        "usage": usage,
-                    })
                 yield {"event": "message", "data": json.dumps(event, ensure_ascii=False, default=str)}
 
         except Exception as e:
@@ -220,7 +301,17 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
 
 
 @router.get("/sessions/{session_id}/messages")
-async def get_messages(session_id: str, limit: int = 100, offset: int = 0):
+async def get_messages(session_id: str, request: Request, limit: int = 100, offset: int = 0):
+    store = _store(request)
+    if store:
+        if not store.get_session(session_id):
+            raise HTTPException(404, "Session not found")
+        messages = store.get_messages(session_id, limit=limit, offset=offset)
+        return {
+            "items": messages,
+            "total": len(messages),
+            "usage": store.get_session_usage(session_id),
+        }
     msgs = _messages.get(session_id, [])
     return {
         "items": msgs[offset:offset + limit],
