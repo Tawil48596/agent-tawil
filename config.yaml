@@ -2,6 +2,7 @@
 # All values can be overridden via environment variables.
 
 server:
+  environment: "development"  # development | production
   host: "0.0.0.0"
   port: 8000
   cors_origins:
@@ -96,6 +97,17 @@ multi_agent:
   max_sub_agents: 10
   retry_attempts: 2
   retry_backoff: "exponential"
+  max_workers: 5
+  max_tasks_per_plan: 20
+  storage_path: "data/orchestration/plans.json"
+
+tool_market:
+  package_path: "data/tool_packages"
+
+messaging:
+  state_path: "data/messaging/sessions.json"
+  webhook_secrets: {}
+  allowed_senders: {}
 
 security:
   content_filter:

@@ -1,7 +1,7 @@
 # AI Agent Platform
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.4.0-6c8cff)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.0-6c8cff)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 一个面向本地开发和能力验证的 AI Agent 实验平台，提供 Web 对话、模型路由、工具调用、会话持久化、记忆、RAG、MCP 和多智能体编排等模块。
@@ -17,13 +17,20 @@
 | 会话与用量 | 可用 | SQLite 持久化、会话删除、自动标题、Token 与缓存命中统计 |
 | 本地长期记忆 | 可用 | 持久化、来源追踪、用户/项目隔离、搜索、编辑和作用域清理 |
 | RAG | 可用（本地） | 知识库与文档持久化、混合检索、引用、文档删除和索引清理 |
-| MCP 与 GitHub | 实验性 | MCP 服务与工具调用、GitHub 仓库读取和工作区接口 |
-| 多智能体 | 实验性 | 任务计划、并行/层级编排、取消、重试、HITL 和检查点接口 |
-| 工具市场 | 原型 | 内置工具注册、启用、依赖检查和内存市场 |
-| Telegram | 原型 | 基础发送、轮询和消息处理适配器 |
-| Discord / Slack | 规划中 | 当前只有基础发送适配器，不具备完整对话闭环 |
+| MCP 与 GitHub | 可用 | 参数校验、审批、超时、刷新及 GitHub 分支/提交/PR 工作流 |
+| 多智能体 | 可用 | 持久计划、并行/链式编排、取消、恢复、重试、配额和进度 |
+| 工具市场 | 可用（本地） | 工具注册、依赖检查、签名校验、版本隔离和回滚 |
+| Telegram / Slack / Discord | 可用（需配置） | 统一 Webhook、签名鉴权、允许列表、去重和会话映射 |
 | PostgreSQL / Milvus / Mem0 | 规划中 | 配置或接口已预留，尚未形成可验证的生产实现 |
-| 运行时插件化 | 规划中 | 已有微内核组件，默认启动仍采用显式模块装配 |
+| 运行时插件化 | 可用（基础） | DI、事件总线、依赖排序、生命周期、故障状态和健康快照 |
+
+## v1.0.0 更新
+
+- GitHub MCP 支持安全的分支、文件提交和 Pull Request 工作流。
+- 工具包支持校验、签名、版本隔离安装和回滚。
+- 多平台消息统一接入 Agent，并具备鉴权、去重和会话恢复。
+- 微内核生命周期、生产安全基线、追踪 ID、指标与就绪检查落地。
+- 完整保留 0.1–0.9 的对话、记忆、RAG、工具和多智能体能力。
 
 ## v0.4.0 更新
 
@@ -104,16 +111,15 @@ npm ci
 npm run build
 ```
 
-## 后续路线
+## 1.x 后续路线
 
-1. 完成记忆与 RAG 的端到端持久化、引用和评估。
-2. 打通 MCP/GitHub 的读取、修改、测试和 PR 工作流。
-3. 持久化多智能体任务、消息和检查点。
-4. 实现可信工具包的下载、校验、隔离安装与回滚。
-5. 完成 Telegram、Slack、Discord 的接收、鉴权和会话闭环。
-6. 落地插件生命周期、生产认证、PostgreSQL、Redis 和可观测性。
+1. 增加 PostgreSQL、Redis、Milvus 和 Mem0 的真实集成环境测试。
+2. 增加反向代理、限流、密钥托管和多租户授权参考部署。
+3. 扩充 GitHub Actions 端到端测试、故障演练与性能基准。
+4. 根据实际使用反馈继续改进 Web UI、无障碍和移动端体验。
 
 详细边界与架构见 [docs/architecture.md](docs/architecture.md)。
+配置与生产边界见 [docs/configuration.md](docs/configuration.md)，发布流程见 [docs/release-checklist.md](docs/release-checklist.md)。
 
 ## License
 

@@ -23,6 +23,7 @@ import uvicorn
 import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from shared.version import APP_VERSION
 
 # ── Config loading ──
 
@@ -104,7 +105,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         """应用生命周期管理"""
-        logger.info("Starting AI Agent Platform...", version="0.4.0")
+        logger.info("Starting AI Agent Platform...", version=APP_VERSION)
         from core.di_container import DIContainer
         from core.event_bus import EventBus
         from core.plugin_manager import PluginManager
@@ -334,11 +335,11 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
         # 种子市场数据
         marketplace.publish(MarketplaceEntry(
-            name="web_search", description="DuckDuckGo 搜索", version="0.4.0",
+            name="web_search", description="DuckDuckGo 搜索", version=APP_VERSION,
             author="builtin", tags=["search", "builtin"], downloads=1000,
         ))
         marketplace.publish(MarketplaceEntry(
-            name="file_read", description="文件读取", version="0.4.0",
+            name="file_read", description="文件读取", version=APP_VERSION,
             author="builtin", tags=["file", "builtin"], downloads=800,
         ))
 
@@ -454,7 +455,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
     app = FastAPI(
         title="AI Agent Platform",
-        version="0.4.0",
+        version=APP_VERSION,
         description="通用 AI Agent 平台 — 多智能体协作、MCP 网关、RAG 检索增强",
         lifespan=lifespan,
     )
@@ -523,7 +524,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     async def health():
         return {
             "status": "ok",
-            "version": "0.4.0",
+            "version": APP_VERSION,
             "config_loaded": bool(config),
             "plugins": app.state.plugin_manager.health(),
         }
