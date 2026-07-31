@@ -42,7 +42,7 @@ export function ChatHeader() {
   };
 
   return (
-    <header className="h-16 border-b border-white/10 flex items-center px-6 gap-3 shrink-0 bg-[#121a2d]/70 backdrop-blur-xl">
+    <header className="relative h-16 border-b border-white/10 flex items-center px-6 gap-3 shrink-0 bg-[#121a2d]/70 backdrop-blur-xl">
       <div className="mr-2 hidden lg:block">
         <div className="text-sm font-semibold">工作台</div>
         <div className="text-[11px] text-[#8f9dbc] mt-0.5 flex items-center gap-1"><Circle size={7} className="fill-[#63d6a3] text-[#63d6a3]" /> 系统已就绪</div>
@@ -105,9 +105,26 @@ export function ChatHeader() {
         <span>会话 <b className="text-[#aebfff]">{formatTokens(sessionUsage?.total_tokens)}</b></span>
       </div>
       <span className="text-xs text-[#8f9dbc]">
-        {error ? <span className="text-[#f87171] mr-3 cursor-pointer" onClick={() => useChatStore.getState().clearError()} title="点击清除">{error.slice(0, 40)}</span> : null}
+        {error ? <span className="text-[#f87171] mr-3">调用失败</span> : null}
         会话: {activeId?.slice(0, 8)}
       </span>
+      {error && (
+        <div className="absolute right-4 top-[calc(100%+8px)] z-50 w-[min(680px,calc(100vw-2rem))] rounded-xl border border-[#f87171]/40 bg-[#2a1118] p-4 shadow-2xl">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-[#fca5a5] mb-1">模型调用失败</div>
+              <pre className="whitespace-pre-wrap break-words text-xs leading-5 text-[#fecaca] font-sans">{error}</pre>
+            </div>
+            <button
+              type="button"
+              onClick={() => useChatStore.getState().clearError()}
+              className="shrink-0 rounded-md border border-[#f87171]/30 px-2 py-1 text-[11px] text-[#fca5a5] hover:bg-white/5"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      )}
     </header>
   );
 }
