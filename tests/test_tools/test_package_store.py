@@ -40,3 +40,22 @@ def test_rejects_tampering_and_path_traversal(tmp_path):
     unsafe = package({"../escape.py": "bad"})
     with pytest.raises(ValueError, match="unsafe"):
         store.install(unsafe, signed_manifest(unsafe, "1.0.0"))
+
+
+@pytest.mark.parametrize("entry", [r"..\escape.py", r"C:\escape.py", "/escape.py"])
+def test_rejects_cross_platform_unsafe_archive_paths(tmp_path, entry):
+    store = ToolPackageStore(tmp_path)
+    data = package({entry: "bad"})
+    manifest = PackageManifest("demo", "1.0.0", hashlib.sha256(data).hexdigest())
+    with pytest.raises(ValueError, match="unsafe"):
+        store.install(data, manifest)
+
+
+@pytest.mark.parametrize("name,version", [("../demo", "1.0.0"), ("demo", "../1.0.0"),
+                                            ("C:demo", "1.0.0")])
+def test_rejects_unsafe_manifest_identifiers(tmp_path, name, version):
+    store = ToolPackageStore(tmp_path)
+    data = package({"tool.py": "safe"})
+    manifest = PackageManifest(name, version, hashlib.sha256(data).hexdigest())
+    with pytest.raises(ValueError, match="invalid"):
+        store.install(data, manifest)

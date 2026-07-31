@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import io
 import json
+import re
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -19,6 +20,8 @@ class PackageManifest:
 
 
 class ToolPackageStore:
+    _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
     def __init__(self, root: str | Path = "data/tool_packages", trusted_key: str = ""):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -40,6 +43,10 @@ class ToolPackageStore:
         temp.replace(self._state_path)
 
     def verify(self, artifact: bytes, manifest: PackageManifest) -> None:
+        if not self._SAFE_ID.fullmatch(manifest.name):
+            raise ValueError("Package name is invalid")
+        if not self._SAFE_ID.fullmatch(manifest.version) or ".." in manifest.version:
+            raise ValueError("Package version is invalid")
         digest = hashlib.sha256(artifact).hexdigest()
         if not hmac.compare_digest(digest, manifest.sha256.lower()):
             raise ValueError("Package checksum mismatch")
@@ -51,15 +58,18 @@ class ToolPackageStore:
                 raise ValueError("Package signature is invalid")
 
     @staticmethod
-    def _safe_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+    def _safe_members(archive: zipfile.ZipFile) -> list[tuple[zipfile.ZipInfo, PurePosixPath]]:
         members = []
         for member in archive.infolist():
-            path = PurePosixPath(member.filename)
-            if path.is_absolute() or ".." in path.parts or member.filename.startswith(("/", "\\")):
+            normalized = member.filename.replace("\\", "/")
+            path = PurePosixPath(normalized)
+            if (path.is_absolute() or ".." in path.parts or
+                    member.filename.startswith(("/", "\\")) or
+                    any(":" in part for part in path.parts)):
                 raise ValueError("Package contains an unsafe path")
             if member.is_dir() or not member.filename.endswith((".py", ".json", ".md", ".txt")):
                 continue
-            members.append(member)
+            members.append((member, path))
         return members
 
     def install(self, artifact: bytes, manifest: PackageManifest) -> dict:
@@ -67,8 +77,8 @@ class ToolPackageStore:
         target = self.root / manifest.name / manifest.version
         target.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(io.BytesIO(artifact)) as archive:
-            for member in self._safe_members(archive):
-                destination = target.joinpath(*PurePosixPath(member.filename).parts)
+            for member, relative_path in self._safe_members(archive):
+                destination = target.joinpath(*relative_path.parts)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(archive.read(member))
         record = self._state.setdefault(manifest.name, {"active": None, "versions": []})
