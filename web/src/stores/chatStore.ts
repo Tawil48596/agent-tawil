@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Session, Message, ModelInfo, ToolDef } from "@/types/chat";
+import type { Session, Message, ModelInfo, ToolDef, TokenUsage } from "@/types/chat";
 import { api } from "@/lib/api";
 
 let activeRequest: AbortController | null = null;
@@ -18,6 +18,8 @@ interface ChatState {
   streamContent: string;
   interrupted: boolean;
   lastSentText: string;
+  lastUsage: TokenUsage | null;
+  sessionUsage: TokenUsage | null;
   error: string | null;
   // Actions
   init: () => Promise<void>;
@@ -48,6 +50,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streamContent: "",
   interrupted: false,
   lastSentText: "",
+  lastUsage: null,
+  sessionUsage: null,
   error: null,
 
   init: async () => {
@@ -68,7 +72,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   createSession: async () => {
     const s = await api.createSession("新对话");
-    set((st) => ({ sessions: [s, ...st.sessions], activeId: s.id, messages: [], error: null }));
+    set((st) => ({
+      sessions: [s, ...st.sessions],
+      activeId: s.id,
+      messages: [],
+      lastUsage: null,
+      sessionUsage: null,
+      error: null,
+    }));
     return s.id;
   },
 
@@ -76,8 +87,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ activeId: id, error: null });
     try {
       const data = await api.getMessages(id);
-      set({ messages: data.items || [] });
-    } catch { set({ messages: [] }); }
+      const assistantMessages = (data.items || []).filter((message: Message) => message.role === "assistant");
+      const lastAssistant = assistantMessages[assistantMessages.length - 1];
+      set({
+        messages: data.items || [],
+        lastUsage: lastAssistant?.usage || null,
+        sessionUsage: data.usage || null,
+      });
+    } catch { set({ messages: [], lastUsage: null, sessionUsage: null }); }
   },
 
   loadSessions: async () => {
@@ -166,7 +183,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 break;
               case "done":
                 if (d.content) fullText = d.content;
-                set({ streamContent: "" });
+                set({
+                  streamContent: "",
+                  lastUsage: d.usage || null,
+                  sessionUsage: d.session_usage || null,
+                });
                 break;
               case "error":
                 set({ error: d.message || "未知错误" });
@@ -192,6 +213,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const asstMsg: Message = {
           id: Date.now() + 1, session_id: sid,
           role: "assistant" as const, content: fullText,
+          usage: get().lastUsage || undefined,
           created_at: new Date().toISOString(),
         };
         set((st) => ({ messages: [...st.messages, asstMsg] }));

@@ -14,6 +14,7 @@ export interface Message {
   content: string;
   tool_calls?: ToolCall[];
   token_count?: number;
+  usage?: TokenUsage;
   created_at: string;
 }
 
@@ -30,8 +31,20 @@ export interface SSEEvent {
   message?: string;
   calls?: any[];
   results?: any[];
-  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  usage?: TokenUsage;
+  session_usage?: TokenUsage;
   model?: string;
+}
+
+export interface TokenUsage {
+  input_tokens: number;
+  cached_input_tokens: number;
+  cache_write_input_tokens: number;
+  output_tokens: number;
+  reasoning_tokens: number;
+  total_tokens: number;
+  requests: number;
+  cache_hit_rate?: number;
 }
 
 export interface ToolDef {
