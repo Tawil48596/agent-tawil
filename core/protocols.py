@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, AsyncIterator
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable
+
+if TYPE_CHECKING:
+    from core.di_container import DIContainer
 
 
 class PluginProtocol(ABC):
