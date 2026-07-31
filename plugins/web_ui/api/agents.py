@@ -1,7 +1,7 @@
 """Multi-Agent + HITL API"""
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
@@ -15,7 +15,7 @@ class CreateTaskRequest(BaseModel):
 class HITLActionRequest(BaseModel):
     action: str = "approve"  # approve | deny | edit
     reason: str = ""
-    edits: dict = {}
+    edits: dict = Field(default_factory=dict)
 
 
 # ── Orchestration ──
@@ -26,7 +26,10 @@ async def create_task(body: CreateTaskRequest, request: Request):
     orch = request.app.state.orchestrator
     from plugins.multi_agent.orchestrator import OrchestrationMode, SubTask
 
-    mode = OrchestrationMode(body.mode)
+    try:
+        mode = OrchestrationMode(body.mode)
+    except ValueError as exc:
+        raise HTTPException(400, f"Unknown orchestration mode: {body.mode}") from exc
     tasks = []
     for t_data in body.tasks:
         task = SubTask(
@@ -38,14 +41,17 @@ async def create_task(body: CreateTaskRequest, request: Request):
         )
         tasks.append(task)
 
-    plan = await orch.create_plan(body.title, mode, tasks)
+    try:
+        plan = await orch.create_plan(body.title, mode, tasks)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return {"plan_id": plan.id, "title": plan.title, "tasks": len(plan.tasks)}
 
 
 @router.post("/tasks/{plan_id}/execute")
 async def execute_task(plan_id: str, request: Request):
     orch = request.app.state.orchestrator
-    plan = await orch.execute(plan_id)
+    plan = await orch.start(plan_id)
     return {
         "plan_id": plan.id,
         "status": plan.status.value,
@@ -58,7 +64,7 @@ async def execute_task(plan_id: str, request: Request):
 @router.get("/tasks")
 async def list_tasks(request: Request):
     orch = request.app.state.orchestrator
-    return {"plans": orch.list_plans()}
+    return {"plans": orch.list_plans(), "limits": orch.limits()}
 
 
 @router.get("/tasks/{plan_id}")
@@ -85,9 +91,9 @@ async def cancel_task(plan_id: str, request: Request):
 
 @router.post("/tasks/{plan_id}/retry")
 async def retry_task(plan_id: str, request: Request):
-    rm = request.app.state.recovery_manager
     orch = request.app.state.orchestrator
-    return await rm.retry_failed("", orch, plan_id)
+    plan = await orch.retry_failed(plan_id)
+    return {"ok": True, "plan_id": plan.id, "status": plan.status.value}
 
 
 # ── HITL ──

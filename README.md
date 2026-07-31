@@ -1,7 +1,7 @@
 # AI Agent Platform
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.2.0-6c8cff)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.0-6c8cff)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 一个面向本地开发和能力验证的 AI Agent 实验平台，提供 Web 对话、模型路由、工具调用、会话持久化、记忆、RAG、MCP 和多智能体编排等模块。
@@ -24,6 +24,13 @@
 | Discord / Slack | 规划中 | 当前只有基础发送适配器，不具备完整对话闭环 |
 | PostgreSQL / Milvus / Mem0 | 规划中 | 配置或接口已预留，尚未形成可验证的生产实现 |
 | 运行时插件化 | 规划中 | 已有微内核组件，默认启动仍采用显式模块装配 |
+
+## v0.4.0 更新
+
+- MCP 工具调用增加参数校验、统一错误、超时、健康检查与动态刷新。
+- GitHub 克隆等写入操作需要显式批准，避免模型越权执行。
+- 多智能体计划持久化到本地，服务重启后可恢复未完成计划。
+- 任务支持后台执行、真实取消、失败重试、配额和准确进度。
 
 ## v0.2.0 更新
 

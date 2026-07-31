@@ -102,7 +102,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         """应用生命周期管理"""
-        logger.info("Starting AI Agent Platform...", version="0.2.0")
+        logger.info("Starting AI Agent Platform...", version="0.4.0")
 
         # ── Phase 1: Agent 引擎 ──
         from plugins.agent_engine.model_router import ModelRouter
@@ -315,11 +315,11 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
         # 种子市场数据
         marketplace.publish(MarketplaceEntry(
-            name="web_search", description="DuckDuckGo 搜索", version="0.2.0",
+            name="web_search", description="DuckDuckGo 搜索", version="0.4.0",
             author="builtin", tags=["search", "builtin"], downloads=1000,
         ))
         marketplace.publish(MarketplaceEntry(
-            name="file_read", description="文件读取", version="0.2.0",
+            name="file_read", description="文件读取", version="0.4.0",
             author="builtin", tags=["file", "builtin"], downloads=800,
         ))
 
@@ -340,7 +340,13 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         from plugins.checkpoint.checkpoint_store import CheckpointStore, RecoveryManager
         from plugins.hitl.hitl_manager import HITLManager
 
-        orchestrator = Orchestrator(agent_engine=engine, max_workers=5)
+        multi_cfg = config.get("multi_agent", {})
+        orchestrator = Orchestrator(
+            agent_engine=engine,
+            max_workers=multi_cfg.get("max_workers", 5),
+            storage_path=multi_cfg.get("storage_path", "data/orchestration/plans.json"),
+            max_tasks_per_plan=multi_cfg.get("max_tasks_per_plan", 20),
+        )
         message_bus = MessageBus()
         blackboard = Blackboard()
         checkpoint_store = CheckpointStore(config)
@@ -422,7 +428,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
     app = FastAPI(
         title="AI Agent Platform",
-        version="0.2.0",
+        version="0.4.0",
         description="通用 AI Agent 平台 — 多智能体协作、MCP 网关、RAG 检索增强",
         lifespan=lifespan,
     )
@@ -483,7 +489,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     async def health():
         return {
             "status": "ok",
-            "version": "0.2.0",
+            "version": "0.4.0",
             "config_loaded": bool(config),
         }
 
