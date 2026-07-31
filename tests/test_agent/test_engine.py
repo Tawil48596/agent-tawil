@@ -134,6 +134,36 @@ def test_reasoning_effort_is_ignored_for_unsupported_model():
     assert "reasoning_effort" not in kwargs
 
 
+def test_deepseek_tools_omit_tool_choice():
+    from plugins.agent_engine.engine import AgentEngine
+    from plugins.agent_engine.model_router import ModelRouter, RouteRequest
+
+    config = {
+        "llm": {
+            "providers": {
+                "deepseek": {
+                    "api_key": "test",
+                    "base_url": "https://api.deepseek.com",
+                },
+            },
+            "fallback_chain": ["deepseek"],
+        },
+        "agent": {},
+    }
+    router = ModelRouter(config)
+    engine = AgentEngine(router, {})
+    route = router.route(RouteRequest(override_model="deepseek-v4-pro"))
+    kwargs = engine._completion_kwargs(
+        route,
+        [{"role": "user", "content": "List files"}],
+        [{"name": "file_list", "parameters": {"type": "object", "properties": {}}}],
+        "high",
+    )
+
+    assert kwargs["tools"][0]["function"]["name"] == "file_list"
+    assert "tool_choice" not in kwargs
+
+
 def test_usage_normalization_includes_cache_and_reasoning_tokens():
     from plugins.agent_engine.engine import AgentEngine
 
@@ -224,3 +254,94 @@ async def test_streaming_usage_chunk_is_included_in_done_event(monkeypatch):
     assert events[-1]["type"] == "done"
     assert events[-1]["usage"]["total_tokens"] == 12
     assert events[-1]["usage"]["cached_input_tokens"] == 6
+
+
+@pytest.mark.asyncio
+async def test_streaming_deepseek_tool_call_replays_required_fields(monkeypatch):
+    from plugins.agent_engine.engine import AgentEngine
+    from plugins.agent_engine.model_router import ModelRouter
+    from plugins.agent_engine.tool_dispatch import ToolDispatcher
+
+    calls = []
+
+    async def first_stream():
+        yield SimpleNamespace(
+            choices=[SimpleNamespace(
+                delta=SimpleNamespace(
+                    content=None,
+                    reasoning_content="I should use the tool.",
+                    tool_calls=[SimpleNamespace(
+                        index=0,
+                        id="call_1",
+                        type=None,
+                        function=SimpleNamespace(name="echo", arguments='{"text":"hi"}'),
+                    )],
+                ),
+                finish_reason="tool_calls",
+            )],
+            usage={"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
+        )
+
+    async def second_stream():
+        yield SimpleNamespace(
+            choices=[SimpleNamespace(
+                delta=SimpleNamespace(content="done", reasoning_content=None, tool_calls=None),
+                finish_reason="stop",
+            )],
+            usage={"prompt_tokens": 10, "completion_tokens": 1, "total_tokens": 11},
+        )
+
+    async def fake_completion(**kwargs):
+        calls.append(kwargs)
+        return first_stream() if len(calls) == 1 else second_stream()
+
+    async def echo(text):
+        return text
+
+    monkeypatch.setattr("plugins.agent_engine.engine.acompletion", fake_completion)
+    config = {
+        "llm": {
+            "providers": {
+                "deepseek": {
+                    "api_key": "test",
+                    "base_url": "https://api.deepseek.com",
+                },
+            },
+            "fallback_chain": ["deepseek"],
+        },
+        "agent": {},
+    }
+    dispatcher = ToolDispatcher()
+    dispatcher.register("echo", echo)
+    engine = AgentEngine(ModelRouter(config), {}, dispatcher)
+
+    events = [
+        event async for event in engine.run_stream(
+            "echo hi",
+            override_model="deepseek-v4-pro",
+            reasoning_effort="high",
+            enabled_tools=[{
+                "name": "echo",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"],
+                },
+            }],
+        )
+    ]
+
+    replayed_messages = calls[1]["messages"]
+    assistant_message = replayed_messages[-2]
+    assert assistant_message["content"] == ""
+    assert assistant_message["reasoning_content"] == "I should use the tool."
+    assert assistant_message["tool_calls"][0]["type"] == "function"
+    assert replayed_messages[-1] == {
+        "role": "tool",
+        "tool_call_id": "call_1",
+        "content": "hi",
+    }
+    assert "tool_choice" not in calls[0]
+    assert events[-1]["type"] == "done"
+    assert events[-1]["content"] == "done"
+    assert events[-1]["usage"]["total_tokens"] == 19
