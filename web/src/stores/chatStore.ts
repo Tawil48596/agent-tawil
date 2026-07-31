@@ -25,6 +25,7 @@ interface ChatState {
   init: () => Promise<void>;
   createSession: () => Promise<string>;
   selectSession: (id: string) => Promise<void>;
+  deleteSession: (id: string) => Promise<void>;
   loadSessions: () => Promise<void>;
   sendMessage: (text: string, retry?: boolean) => Promise<void>;
   stopStreaming: () => void;
@@ -95,6 +96,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
         sessionUsage: data.usage || null,
       });
     } catch { set({ messages: [], lastUsage: null, sessionUsage: null }); }
+  },
+
+  deleteSession: async (id) => {
+    await api.deleteSession(id);
+    set((state) => {
+      const deletingActive = state.activeId === id;
+      return {
+        sessions: state.sessions.filter((session) => session.id !== id),
+        activeId: deletingActive ? null : state.activeId,
+        messages: deletingActive ? [] : state.messages,
+        lastUsage: deletingActive ? null : state.lastUsage,
+        sessionUsage: deletingActive ? null : state.sessionUsage,
+        error: null,
+      };
+    });
   },
 
   loadSessions: async () => {

@@ -6,6 +6,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 
@@ -38,6 +39,7 @@ class LongTermMemory:
         self._importance_threshold = mem_cfg.get("importance_threshold", 0.3)
         self._decay_lambda = mem_cfg.get("decay_lambda", 0.01)
         self._max_retrieved = mem_cfg.get("max_retrieved", 10)
+        self._storage_path = Path(mem_cfg.get("storage_path", "data/memory.json"))
 
         self._storage: dict[str, MemoryEntry] = {}
         self._chroma_client = None
@@ -45,6 +47,45 @@ class LongTermMemory:
 
         if self._backend == "chromadb":
             self._init_chromadb(cfg)
+        else:
+            self._load_builtin()
+
+    def _load_builtin(self) -> None:
+        if not self._storage_path.exists():
+            return
+        try:
+            entries = json.loads(self._storage_path.read_text(encoding="utf-8"))
+            for data in entries:
+                entry = MemoryEntry(**data)
+                self._storage[entry.id] = entry
+        except (OSError, TypeError, ValueError):
+            self._storage = {}
+
+    def _persist_builtin(self) -> None:
+        if self._backend != "builtin":
+            return
+        self._storage_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = [
+            {
+                "id": entry.id,
+                "content": entry.content,
+                "embedding": entry.embedding,
+                "type": entry.type,
+                "importance": entry.importance,
+                "source_session": entry.source_session,
+                "created_at": entry.created_at,
+                "last_accessed_at": entry.last_accessed_at,
+                "access_count": entry.access_count,
+                "ttl": entry.ttl,
+            }
+            for entry in self._storage.values()
+        ]
+        temporary = self._storage_path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        temporary.replace(self._storage_path)
 
     def _init_chromadb(self, config: dict):
         try:
@@ -82,6 +123,7 @@ class LongTermMemory:
             )
 
         self._storage[entry.id] = entry
+        self._persist_builtin()
         return entry.id
 
     async def batch_save(self, entries: list[MemoryEntry]) -> list[str]:
@@ -98,6 +140,7 @@ class LongTermMemory:
         if entry:
             entry.last_accessed_at = time.time()
             entry.access_count += 1
+            self._persist_builtin()
         return entry
 
     async def delete(self, entry_id: str) -> bool:
@@ -108,10 +151,12 @@ class LongTermMemory:
                 self._chroma_collection.delete(ids=[entry_id])
             except Exception:
                 pass
+        self._persist_builtin()
         return True
 
     async def clear(self):
         self._storage.clear()
+        self._persist_builtin()
         if self._chroma_collection:
             try:
                 # ChromaDB 不支持 clear，删除并重建
@@ -213,6 +258,7 @@ class LongTermMemory:
         ]
         for eid in to_delete:
             del self._storage[eid]
+        self._persist_builtin()
 
         return entries
 

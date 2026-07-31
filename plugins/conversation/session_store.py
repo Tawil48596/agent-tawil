@@ -50,6 +50,9 @@ class SessionStore:
                 content         TEXT,
                 tool_calls      TEXT DEFAULT '[]',
                 token_count     INTEGER DEFAULT 0,
+                model           TEXT,
+                provider        TEXT,
+                usage           TEXT DEFAULT '{}',
                 created_at      TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY (session_id) REFERENCES sessions(id)
             );
@@ -61,15 +64,27 @@ class SessionStore:
             CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
             CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
         """)
+        columns = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(messages)").fetchall()
+        }
+        for name, definition in {
+            "model": "TEXT",
+            "provider": "TEXT",
+            "usage": "TEXT DEFAULT '{}'",
+        }.items():
+            if name not in columns:
+                self._conn.execute(f"ALTER TABLE messages ADD COLUMN {name} {definition}")
         self._conn.commit()
 
-        # Rebuild FTS5 index from existing data
-        self._conn.execute("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')")
-        self._conn.commit()
-
-        # Initial FTS5 index population
-        self._conn.execute("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')")
-        self._conn.commit()
+        message_count = self._conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+        indexed_count = self._conn.execute("SELECT COUNT(*) FROM messages_fts").fetchone()[0]
+        if message_count and not indexed_count:
+            self._conn.execute(
+                """INSERT INTO messages_fts(rowid, session_id, role, content)
+                   SELECT id, session_id, role, COALESCE(content, '') FROM messages"""
+            )
+            self._conn.commit()
 
     # ── Session CRUD ──
 
@@ -101,7 +116,17 @@ class SessionStore:
             params.append(source)
         query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
-        return [dict(r) for r in self._conn.execute(query, params).fetchall()]
+        rows = [dict(r) for r in self._conn.execute(query, params).fetchall()]
+        for row in rows:
+            summary = self._conn.execute(
+                """SELECT COUNT(*) AS message_count,
+                          MAX(CASE WHEN role = 'user' THEN content END) AS preview
+                   FROM messages WHERE session_id = ?""",
+                (row["id"],),
+            ).fetchone()
+            row["message_count"] = summary["message_count"]
+            row["preview"] = summary["preview"] or ""
+        return rows
 
     def update_session(self, session_id: str, title: str = None,
                         metadata: dict = None) -> bool:
@@ -125,6 +150,11 @@ class SessionStore:
         return False
 
     def delete_session(self, session_id: str) -> bool:
+        # Keep child branches usable after their parent conversation is removed.
+        self._conn.execute(
+            "UPDATE sessions SET parent_id = NULL WHERE parent_id = ?",
+            (session_id,),
+        )
         # 先删消息 + FTS5
         self._conn.execute(
             "DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE session_id = ?)",
@@ -139,12 +169,16 @@ class SessionStore:
 
     def add_message(self, session_id: str, role: str, content: str,
                      tool_calls: list = None, token_count: int = 0,
-                     parent_msg_id: int = None) -> int:
+                     parent_msg_id: int = None, model: str = None,
+                     provider: str = None, usage: dict = None) -> int:
         cur = self._conn.execute(
-            """INSERT INTO messages (session_id, parent_msg_id, role, content, tool_calls, token_count)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO messages (
+                   session_id, parent_msg_id, role, content, tool_calls,
+                   token_count, model, provider, usage
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (session_id, parent_msg_id, role, content,
-             json.dumps(tool_calls or [], ensure_ascii=False), token_count),
+             json.dumps(tool_calls or [], ensure_ascii=False), token_count,
+             model, provider, json.dumps(usage or {}, ensure_ascii=False)),
         )
         msg_id = cur.lastrowid
         # Sync FTS5
@@ -165,7 +199,42 @@ class SessionStore:
             "SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC LIMIT ? OFFSET ?",
             (session_id, limit, offset),
         ).fetchall()
-        return [dict(r) for r in rows]
+        messages = [dict(r) for r in rows]
+        for message in messages:
+            for key, default in (("tool_calls", []), ("usage", {})):
+                try:
+                    message[key] = json.loads(message.get(key) or json.dumps(default))
+                except (TypeError, json.JSONDecodeError):
+                    message[key] = default
+        return messages
+
+    def get_session_usage(self, session_id: str) -> dict[str, int | float]:
+        keys = (
+            "input_tokens",
+            "cached_input_tokens",
+            "cache_write_input_tokens",
+            "output_tokens",
+            "reasoning_tokens",
+            "total_tokens",
+            "requests",
+        )
+        total = {key: 0 for key in keys}
+        rows = self._conn.execute(
+            "SELECT usage FROM messages WHERE session_id = ? AND role = 'assistant'",
+            (session_id,),
+        ).fetchall()
+        for row in rows:
+            try:
+                usage = json.loads(row["usage"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                usage = {}
+            for key in keys:
+                total[key] += int(usage.get(key, 0) or 0)
+        total["cache_hit_rate"] = (
+            round(total["cached_input_tokens"] / total["input_tokens"], 4)
+            if total["input_tokens"] else 0.0
+        )
+        return total
 
     # ── Search ──
 
