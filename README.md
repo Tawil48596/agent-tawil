@@ -1,84 +1,111 @@
 # AI Agent Platform
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![Version](https://img.shields.io/badge/version-0.1.2-6c8cff)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-通用 AI Agent 平台 — 具备 GitHub 开源项目浏览/调用能力、多智能体协作、工具市场、MCP 网关、RAG 检索增强、长上下文记忆管理。
+一个面向本地开发和能力验证的 AI Agent 实验平台，提供 Web 对话、模型路由、工具调用、会话持久化、记忆、RAG、MCP 和多智能体编排等模块。
 
-## 核心能力
+> 当前版本是实验性版本，不建议直接用于多用户生产环境。下表会明确区分可用能力、实验性能力和规划能力。
 
-- **Agent 引擎** — LLM 推理循环 + 工具调用调度 + 上下文生命周期管理
-- **多智能体协作** — 任务委派、并行执行、层级编排、代理间通信
-- **MCP 网关** — Model Context Protocol 完整实现，连接 GitHub 等外部工具源
-- **RAG 检索增强** — 混合检索 + 重排序 + 查询改写 + 引用追踪
-- **工具市场** — 工具注册/发现/安装/版本管理/沙箱执行
-- **记忆系统** — 短期上下文窗口 + 长期向量记忆 + 用户画像
-- **多平台接入** — Web UI、Telegram、Discord、Slack、REST API
-- **插件架构** — 微内核 + 插件，所有功能可替换/扩展
+## 当前能力
 
-## 技术栈
+| 能力 | 状态 | 当前范围 |
+|---|---|---|
+| Web UI 与 REST API | 可用 | 对话、会话历史、设置、知识库、工具和分析页面 |
+| Agent 引擎 | 可用 | LiteLLM 模型路由、流式响应、工具调用、上下文管理和跨 Provider 降级 |
+| 会话与用量 | 可用 | SQLite 持久化、会话删除、自动标题、Token 与缓存命中统计 |
+| 本地长期记忆 | 实验性 | 内置 JSON 持久化、搜索、删除和清空 |
+| RAG | 实验性 | 知识库、文档摄取、切分、检索、重排和引用模块 |
+| MCP 与 GitHub | 实验性 | MCP 服务与工具调用、GitHub 仓库读取和工作区接口 |
+| 多智能体 | 实验性 | 任务计划、并行/层级编排、取消、重试、HITL 和检查点接口 |
+| 工具市场 | 原型 | 内置工具注册、启用、依赖检查和内存市场 |
+| Telegram | 原型 | 基础发送、轮询和消息处理适配器 |
+| Discord / Slack | 规划中 | 当前只有基础发送适配器，不具备完整对话闭环 |
+| PostgreSQL / Milvus / Mem0 | 规划中 | 配置或接口已预留，尚未形成可验证的生产实现 |
+| 运行时插件化 | 规划中 | 已有微内核组件，默认启动仍采用显式模块装配 |
 
-| 层 | 技术 |
-|---|------|
-| 后端 | Python 3.11+ / FastAPI / asyncio |
-| 前端 | React 18 + TypeScript + Vite + Shadcn/ui |
-| 数据库 | SQLite (dev) → PostgreSQL (prod) |
-| 向量库 | ChromaDB → pgvector / Milvus |
-| 缓存 | Redis |
-| LLM | LiteLLM (OpenAI / Anthropic / DeepSeek) |
-| 部署 | Docker + docker-compose |
+## v0.1.2 更新
+
+- 修复模型路由配置位置不一致的问题。
+- LLM 调用失败后排除失败的 Provider，避免重复请求同一故障服务。
+- 保留 OpenAI、Anthropic 和 DeepSeek 的工具调用兼容处理。
+- 完善中断重发、会话持久化、Token 与缓存命中统计测试。
+- 更新 README，使能力状态与当前实现一致。
+
+完整记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 快速开始
 
+### Windows
+
+1. 双击仓库根目录的 `启动.bat`。
+2. 首次运行时，启动器会创建本地环境并安装依赖。
+3. 浏览器打开 `http://127.0.0.1:8010`。
+4. 在“设置”页面配置模型服务，或提前设置环境变量。
+
+### 命令行
+
 ```bash
-# 克隆仓库
-git clone <repo-url>
-# 或直接下载源码
-cd ai-agent-platform
+git clone https://github.com/Tawil48596/agent-tawil.git
+cd agent-tawil
+python -m pip install -e ".[dev]"
+python launcher.py
+```
 
-# 安装依赖
-pip install -e ".[dev]"
+默认启动地址为 `http://127.0.0.1:8010`。也可以使用底层入口：
 
-# 配置环境变量
-cp .env.example .env
-# 编辑 .env 填入 API Key
-
-# 启动服务
+```bash
 python app.py
 ```
 
+### 模型配置
+
+至少配置一个模型服务：
+
+```text
+OPENAI_API_KEY
+ANTHROPIC_API_KEY
+DEEPSEEK_API_KEY
+```
+
+本地密钥、数据库、日志、记忆文件和 `.env` 已加入 `.gitignore`，不应提交到 GitHub。
+
 ## 项目结构
 
+```text
+agent-tawil/
+├── core/              # 微内核基础组件
+├── plugins/           # Agent、会话、记忆、RAG、MCP 等模块
+├── services/          # 服务编排层
+├── shared/            # 共享模型、数据库与工具
+├── web/               # React + TypeScript 前端
+├── tests/             # 自动测试
+├── docs/              # 架构文档
+├── launcher.py        # 本地启动器
+├── 启动.bat           # Windows 双击启动
+└── app.py             # FastAPI 底层入口
 ```
-ai-agent-platform/
-├── core/              # 微内核 (PluginManager, EventBus, DIContainer)
-├── plugins/           # 内置插件 (agent_engine, memory, rag, mcp, ...)
-├── extensions/        # 第三方插件
-├── web/               # 前端项目 (React + Vite)
-├── services/          # Service 层
-├── shared/            # 共享类型和工具
-├── docs/              # 文档
-├── tests/             # 测试
-└── app.py             # 入口
+
+## 开发与验证
+
+```bash
+python -m pytest
+cd web
+npm ci
+npm run build
 ```
 
-## 架构文档
+## 后续路线
 
-详见 [docs/architecture.md](docs/architecture.md) — 包含完整模块设计、API 设计、扩展点、实施路线图。
+1. 完成记忆与 RAG 的端到端持久化、引用和评估。
+2. 打通 MCP/GitHub 的读取、修改、测试和 PR 工作流。
+3. 持久化多智能体任务、消息和检查点。
+4. 实现可信工具包的下载、校验、隔离安装与回滚。
+5. 完成 Telegram、Slack、Discord 的接收、鉴权和会话闭环。
+6. 落地插件生命周期、生产认证、PostgreSQL、Redis 和可观测性。
 
-## 开发路线
-
-| Phase | 内容 | 周期 |
-|-------|------|------|
-| 1 | 核心骨架 (Agent引擎 + 对话管理 + 记忆基础) | 4-6 周 |
-| 2 | GitHub + MCP 网关 | 2-3 周 |
-| 3 | 记忆 & RAG 检索引擎 | 3-4 周 |
-| 4 | 工具市场 | 2-3 周 |
-| 5 | 多智能体协作 | 3-4 周 |
-| 6 | 消息平台接入 + 用量统计 | 2-3 周 |
-| 7 | Docker 部署 + 性能优化 + 文档 | 2 周 |
-
-**总计：约 18-26 周**
+详细边界与架构见 [docs/architecture.md](docs/architecture.md)。
 
 ## License
 

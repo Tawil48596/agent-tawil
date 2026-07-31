@@ -41,6 +41,7 @@ class RouteRequest:
     prefer_fast: bool = False
     prefer_vision: bool = False
     max_context_needed: int = 8192         # 需要的上下文长度
+    excluded_providers: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -152,7 +153,10 @@ class ModelRouter:
         ))
 
         # 任务 → 默认模型映射
-        routing_cfg = llm_cfg.get("model_routing", {})
+        routing_cfg = {
+            **llm_cfg.get("model_routing", {}),
+            **config.get("agent", {}).get("model_routing", {}),
+        }
         self._task_map = {
             TaskType.REASONING: routing_cfg.get("reasoning", self._default_model),
             TaskType.CODING: routing_cfg.get("coding", self._default_model),
@@ -229,10 +233,16 @@ class ModelRouter:
           3. default_model — 全局默认
           4. fallback_chain — Provider 不可用时降级
         """
+        excluded_providers = set(request.excluded_providers)
+
         # 1. 用户显式覆盖（per-message 切换）
         if request.override_model:
             model_info = self._models.get(request.override_model)
-            if model_info and self._has_usable_key(self._providers.get(model_info.provider, {})):
+            if (
+                model_info
+                and model_info.provider not in excluded_providers
+                and self._has_usable_key(self._providers.get(model_info.provider, {}))
+            ):
                 return self._build_result(model_info, "override")
             logger.warning("Override model not available", model=request.override_model)
 
@@ -241,13 +251,17 @@ class ModelRouter:
 
         # 3. 偏好 Provider 调整
         if request.prefer_provider:
-            candidate = self._find_model_by_provider(request.task_type, request.prefer_provider)
+            candidate = self._find_model_by_provider(
+                request.task_type,
+                request.prefer_provider,
+                excluded_providers=excluded_providers,
+            )
             if candidate:
                 model_name = candidate
 
         # 4. 视觉需求
         if request.prefer_vision:
-            vision_model = self._find_vision_model()
+            vision_model = self._find_vision_model(excluded_providers)
             if vision_model:
                 model_name = vision_model
 
@@ -256,13 +270,24 @@ class ModelRouter:
             model_name = self._fast_model
 
         model_info = self._models.get(model_name)
-        if model_info and self._has_usable_key(self._providers.get(model_info.provider, {})):
+        if (
+            model_info
+            and model_info.provider not in excluded_providers
+            and self._has_usable_key(self._providers.get(model_info.provider, {}))
+        ):
             return self._build_result(model_info, "task")
 
         # 6. 降级链
         for provider_name in self._fallback_chain:
-            if self._has_usable_key(self._providers.get(provider_name, {})):
-                fallback_model = self._find_model_by_provider(request.task_type, provider_name)
+            if (
+                provider_name not in excluded_providers
+                and self._has_usable_key(self._providers.get(provider_name, {}))
+            ):
+                fallback_model = self._find_model_by_provider(
+                    request.task_type,
+                    provider_name,
+                    excluded_providers=excluded_providers,
+                )
                 if fallback_model:
                     model_info = self._models[fallback_model]
                     logger.info("Using fallback", provider=provider_name, model=model_info.name)
@@ -290,8 +315,16 @@ class ModelRouter:
             routed_by=routed_by,
         )
 
-    def _find_model_by_provider(self, task_type: TaskType, provider: str) -> Optional[str]:
+    def _find_model_by_provider(
+        self,
+        task_type: TaskType,
+        provider: str,
+        *,
+        excluded_providers: Optional[set[str]] = None,
+    ) -> Optional[str]:
         """在指定 Provider 下找适合任务的模型"""
+        if provider in (excluded_providers or set()):
+            return None
         for name, info in self._models.items():
             if info.provider == provider and self._has_usable_key(self._providers.get(provider, {})):
                 # 检查标签匹配
@@ -303,8 +336,13 @@ class ModelRouter:
                 return name
         return None
 
-    def _find_vision_model(self) -> Optional[str]:
+    def _find_vision_model(self, excluded_providers: Optional[set[str]] = None) -> Optional[str]:
+        excluded_providers = excluded_providers or set()
         for name, info in self._models.items():
-            if info.supports_vision and self._has_usable_key(self._providers.get(info.provider, {})):
+            if (
+                info.provider not in excluded_providers
+                and info.supports_vision
+                and self._has_usable_key(self._providers.get(info.provider, {}))
+            ):
                 return name
         return None

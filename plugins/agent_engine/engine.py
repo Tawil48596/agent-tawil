@@ -102,6 +102,7 @@ class AgentEngine:
 
         turns = 0
         consecutive_failures = 0
+        failed_providers: set[str] = set()
         total_usage = self._empty_usage()
 
         while turns < self.max_turns:
@@ -213,15 +214,21 @@ class AgentEngine:
                         consecutive_failures = 0
 
             except Exception as e:
-                logger.error("LLM error", error=str(e))
-                # 降级重试
-                fallback = self.router.route(RouteRequest(
-                    task_type=task_type,
-                    prefer_fast=True,
-                ))
-                route_result = fallback
+                failed_provider = route_result.provider
+                failed_providers.add(failed_provider)
+                logger.error(
+                    "LLM error",
+                    error=str(e),
+                    provider=failed_provider,
+                    model=route_result.model,
+                )
                 consecutive_failures += 1
-                if consecutive_failures > 2:
+                try:
+                    route_result = self.router.route(RouteRequest(
+                        task_type=task_type,
+                        excluded_providers=failed_providers,
+                    ))
+                except RuntimeError:
                     yield {"type": "error", "message": f"LLM 调用失败: {str(e)}"}
                     return
 
@@ -241,6 +248,7 @@ class AgentEngine:
         """非流式推理循环"""
         turns = 0
         consecutive_failures = 0
+        failed_providers: set[str] = set()
 
         while turns < self.max_turns:
             if self.context_manager.needs_compression(messages, route_result.context_length):
@@ -251,11 +259,21 @@ class AgentEngine:
                     route_result, messages, enabled_tools, reasoning_effort
                 ))
             except Exception as e:
-                logger.error("LLM error", error=str(e))
-                fallback = self.router.route(RouteRequest(task_type=TaskType.FAST))
-                route_result = fallback
+                failed_provider = route_result.provider
+                failed_providers.add(failed_provider)
+                logger.error(
+                    "LLM error",
+                    error=str(e),
+                    provider=failed_provider,
+                    model=route_result.model,
+                )
                 consecutive_failures += 1
-                if consecutive_failures > 2:
+                try:
+                    route_result = self.router.route(RouteRequest(
+                        task_type=TaskType.FAST,
+                        excluded_providers=failed_providers,
+                    ))
+                except RuntimeError:
                     return EngineResponse(
                         text=f"LLM 调用失败: {str(e)}",
                         stop_reason="tool_error",

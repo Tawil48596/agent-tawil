@@ -345,3 +345,148 @@ async def test_streaming_deepseek_tool_call_replays_required_fields(monkeypatch)
     assert events[-1]["type"] == "done"
     assert events[-1]["content"] == "done"
     assert events[-1]["usage"]["total_tokens"] == 19
+
+
+def test_model_routing_reads_documented_agent_config():
+    from plugins.agent_engine.model_router import ModelRouter, TaskType
+
+    config = {
+        "llm": {
+            "default_model": "gpt-4o",
+            "fast_model": "gpt-4o-mini",
+            "providers": {
+                "openai": {"api_key": "test", "base_url": ""},
+                "anthropic": {"api_key": "test", "base_url": ""},
+            },
+            "fallback_chain": ["openai", "anthropic"],
+        },
+        "agent": {
+            "model_routing": {
+                "coding": "claude-sonnet-4",
+            },
+        },
+    }
+
+    router = ModelRouter(config)
+
+    assert router.get_model_for_task(TaskType.CODING) == "claude-sonnet-4"
+
+
+def test_router_excludes_failed_provider_from_fallback():
+    from plugins.agent_engine.model_router import ModelRouter, RouteRequest
+
+    config = {
+        "llm": {
+            "default_model": "gpt-4o",
+            "fast_model": "gpt-4o-mini",
+            "providers": {
+                "openai": {"api_key": "openai-test", "base_url": ""},
+                "anthropic": {"api_key": "anthropic-test", "base_url": ""},
+            },
+            "fallback_chain": ["openai", "anthropic"],
+        },
+        "agent": {},
+    }
+    router = ModelRouter(config)
+
+    result = router.route(RouteRequest(excluded_providers={"openai"}))
+
+    assert result.provider == "anthropic"
+    assert result.routed_by == "fallback"
+
+
+def test_fallback_handler_does_not_return_failed_provider():
+    from plugins.agent_engine.fallback import FallbackHandler
+    from plugins.agent_engine.model_router import ModelRouter, RouteRequest
+
+    config = {
+        "llm": {
+            "default_model": "gpt-4o",
+            "providers": {
+                "openai": {"api_key": "openai-test", "base_url": ""},
+                "deepseek": {"api_key": "deepseek-test", "base_url": ""},
+            },
+            "fallback_chain": ["openai", "deepseek"],
+        },
+        "agent": {},
+    }
+    router = ModelRouter(config)
+    failed = router.route(RouteRequest(override_model="gpt-4o"))
+    handler = FallbackHandler(router, ["openai", "deepseek"])
+
+    fallback = handler.get_next(failed)
+
+    assert fallback is not None
+    assert fallback.provider == "deepseek"
+
+
+@pytest.mark.asyncio
+async def test_streaming_failure_moves_to_next_provider(monkeypatch):
+    from plugins.agent_engine.engine import AgentEngine
+    from plugins.agent_engine.model_router import ModelRouter
+
+    calls = []
+
+    async def successful_stream():
+        yield SimpleNamespace(
+            choices=[SimpleNamespace(
+                delta=SimpleNamespace(content="recovered", tool_calls=None),
+                finish_reason="stop",
+            )],
+            usage={"prompt_tokens": 4, "completion_tokens": 1, "total_tokens": 5},
+        )
+
+    async def fake_completion(**kwargs):
+        calls.append(kwargs["model"])
+        if len(calls) == 1:
+            raise RuntimeError("primary unavailable")
+        return successful_stream()
+
+    monkeypatch.setattr("plugins.agent_engine.engine.acompletion", fake_completion)
+    config = {
+        "llm": {
+            "default_model": "gpt-4o",
+            "providers": {
+                "openai": {"api_key": "openai-test", "base_url": ""},
+                "anthropic": {"api_key": "anthropic-test", "base_url": ""},
+            },
+            "fallback_chain": ["openai", "anthropic"],
+        },
+        "agent": {},
+    }
+    engine = AgentEngine(ModelRouter(config), {})
+
+    events = [event async for event in engine.run_stream("hello")]
+
+    assert calls[0] == "gpt-4o"
+    assert calls[1].startswith("anthropic/")
+    assert events[-1]["type"] == "done"
+    assert events[-1]["content"] == "recovered"
+    assert events[-1]["provider"] == "anthropic"
+
+
+@pytest.mark.asyncio
+async def test_streaming_failure_stops_when_no_distinct_fallback(monkeypatch):
+    from plugins.agent_engine.engine import AgentEngine
+    from plugins.agent_engine.model_router import ModelRouter
+
+    async def fake_completion(**kwargs):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr("plugins.agent_engine.engine.acompletion", fake_completion)
+    config = {
+        "llm": {
+            "default_model": "gpt-4o",
+            "providers": {
+                "openai": {"api_key": "openai-test", "base_url": ""},
+            },
+            "fallback_chain": ["openai"],
+        },
+        "agent": {},
+    }
+    engine = AgentEngine(ModelRouter(config), {})
+
+    events = [event async for event in engine.run_stream("hello")]
+
+    assert events[-1]["type"] == "error"
+    assert "provider unavailable" in events[-1]["message"]

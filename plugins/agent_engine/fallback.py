@@ -24,6 +24,8 @@ class FallbackHandler:
                 try:
                     return self.router.route(RouteRequest(
                         task_type=TaskType.REASONING,
+                        prefer_provider=provider,
+                        excluded_providers=set(self._failed_providers),
                     ))
                 except RuntimeError:
                     self._failed_providers.add(provider)
