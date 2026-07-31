@@ -1,6 +1,6 @@
 [project]
 name = "ai-agent-platform"
-version = "0.8.0"
+version = "0.9.0"
 description = "通用 AI Agent 平台 — 多智能体协作、MCP 网关、RAG 检索增强、工具市场"
 readme = "README.md"
 license = {text = "MIT"}

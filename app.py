@@ -98,6 +98,8 @@ logger = structlog.get_logger()
 
 def create_app(config: dict[str, Any]) -> FastAPI:
     server_cfg = config.get("server", {})
+    from plugins.security.baseline import enforce_production_config
+    enforce_production_config(config)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -457,6 +459,12 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         lifespan=lifespan,
     )
 
+    from plugins.observability.http_middleware import ObservabilityMiddleware
+    from plugins.observability.metrics import MetricsCollector
+    metrics_collector = MetricsCollector()
+    app.state.metrics_collector = metrics_collector
+    app.add_middleware(ObservabilityMiddleware, metrics=metrics_collector)
+
     # CORS
     app.add_middleware(
         CORSMiddleware,
@@ -519,6 +527,20 @@ def create_app(config: dict[str, Any]) -> FastAPI:
             "config_loaded": bool(config),
             "plugins": app.state.plugin_manager.health(),
         }
+
+    @app.get("/ready")
+    async def ready():
+        checks = {
+            "config": bool(config),
+            "mcp": app.state.mcp_gateway.health()["status"] in ("ok", "degraded"),
+            "session_store": hasattr(app.state, "session_store"),
+            "agent_engine": hasattr(app.state, "agent_engine"),
+        }
+        return {"status": "ready" if all(checks.values()) else "not_ready", "checks": checks}
+
+    @app.get("/metrics")
+    async def metrics():
+        return metrics_collector.get_all()
 
     # ── Config inspection (dev only) ──
 
