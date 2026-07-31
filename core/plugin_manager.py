@@ -1,8 +1,6 @@
-"""插件管理器 — 发现、加载、生命周期管理、依赖解析"""
+"""Runtime plugin discovery, dependency ordering and lifecycle isolation."""
 
-import importlib
-import os
-import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -13,99 +11,127 @@ from core.protocols import PluginProtocol
 logger = structlog.get_logger()
 
 
-class PluginManager:
-    """负责插件的发现、加载、生命周期管理、依赖解析"""
+@dataclass
+class PluginState:
+    status: str = "registered"
+    error: str = ""
 
+
+class PluginManager:
     def __init__(self, plugin_dirs: list[str], event_bus=None, container=None):
-        self._dirs = [Path(d) for d in plugin_dirs]
+        self._dirs = [Path(path) for path in plugin_dirs]
         self._plugins: dict[str, PluginProtocol] = {}
+        self._states: dict[str, PluginState] = {}
         self._load_order: list[str] = []
         self._extensions: dict[str, Any] = {}
         self._event_bus = event_bus
         self._container = container
 
     async def discover(self) -> list[str]:
-        """扫描 plugin_dirs 下的所有 Python 包，自动发现插件"""
         discovered = []
-        for d in self._dirs:
-            if not d.exists():
+        for directory in self._dirs:
+            if not directory.exists():
                 continue
-            for item in d.iterdir():
-                if item.is_dir() and not item.name.startswith("_") and not item.name.startswith("."):
-                    plugin_file = item / "plugin.py"
-                    if plugin_file.exists():
-                        discovered.append(item.name)
-                    elif (item / "__init__.py").exists():
-                        discovered.append(item.name)
-        logger.info("Plugins discovered", count=len(discovered), plugins=discovered)
-        return discovered
+            for item in directory.iterdir():
+                if (item.is_dir() and not item.name.startswith(("_", ".")) and
+                        ((item / "plugin.py").exists() or (item / "__init__.py").exists())):
+                    discovered.append(item.name)
+        return sorted(set(discovered))
+
+    def register(self, plugin: PluginProtocol) -> None:
+        if plugin.name in self._plugins:
+            raise ValueError(f"Plugin already registered: {plugin.name}")
+        self._plugins[plugin.name] = plugin
+        self._states[plugin.name] = PluginState()
 
     async def resolve_dependencies(self) -> list[str]:
-        """拓扑排序依赖，检测循环依赖，返回加载顺序"""
-        in_degree: dict[str, int] = {}
-        graph: dict[str, list[str]] = {}
-
+        names = set(self._plugins)
+        missing = {name: [dep for dep in plugin.dependencies if dep not in names]
+                   for name, plugin in self._plugins.items()}
+        missing = {name: deps for name, deps in missing.items() if deps}
+        if missing:
+            details = ", ".join(f"{name}: {deps}" for name, deps in missing.items())
+            raise RuntimeError(f"Missing plugin dependencies: {details}")
+        in_degree = {name: 0 for name in names}
+        graph = {name: [] for name in names}
         for name, plugin in self._plugins.items():
-            if name not in in_degree:
-                in_degree[name] = 0
-            for dep in plugin.dependencies:
-                graph.setdefault(dep, []).append(name)
-                in_degree[name] = in_degree.get(name, 0) + 1
-                if dep not in in_degree:
-                    in_degree[dep] = 0
-
-        # Kahn's algorithm
-        queue = [n for n, d in in_degree.items() if d == 0]
+            for dependency in plugin.dependencies:
+                graph[dependency].append(name)
+                in_degree[name] += 1
+        queue = sorted(name for name, degree in in_degree.items() if degree == 0)
         order = []
-
         while queue:
             node = queue.pop(0)
             order.append(node)
-            for neighbor in graph.get(node, []):
+            for neighbor in graph[node]:
                 in_degree[neighbor] -= 1
                 if in_degree[neighbor] == 0:
                     queue.append(neighbor)
-
-        if len(order) != len(in_degree):
+                    queue.sort()
+        if len(order) != len(names):
             raise RuntimeError("Circular dependency detected in plugins")
-
         self._load_order = order
         return order
 
-    async def load_all(self, container) -> None:
-        """按依赖顺序加载所有插件"""
+    async def load_all(self, container=None) -> None:
+        container = container or self._container
+        if not self._load_order:
+            await self.resolve_dependencies()
         for name in self._load_order:
-            plugin = self._plugins.get(name)
-            if plugin:
+            plugin = self._plugins[name]
+            try:
                 await plugin.on_load(container)
-                logger.info("Plugin loaded", name=name, version=plugin.version)
+                self._states[name] = PluginState("loaded")
+            except Exception as exc:
+                self._states[name] = PluginState("error", str(exc))
+                logger.exception("Plugin load failed", name=name)
+                raise RuntimeError(f"Plugin load failed: {name}: {exc}") from exc
+
+    async def enable(self, name: str) -> None:
+        plugin = self._plugins.get(name)
+        if not plugin:
+            raise KeyError(f"Plugin not found: {name}")
+        if self._states[name].status not in ("loaded", "disabled"):
+            raise RuntimeError(f"Plugin is not loadable from state: {self._states[name].status}")
+        try:
+            await plugin.on_enable()
+            for key, value in plugin.get_extensions().items():
+                self._extensions[f"{name}.{key}"] = value
+            self._states[name] = PluginState("enabled")
+        except Exception as exc:
+            self._states[name] = PluginState("error", str(exc))
+            raise
 
     async def enable_all(self) -> None:
-        """按顺序启用所有插件"""
         for name in self._load_order:
-            plugin = self._plugins.get(name)
-            if plugin:
-                await plugin.on_enable()
-                exts = plugin.get_extensions()
-                if exts:
-                    self._extensions.update({f"{name}.{k}": v for k, v in exts.items()})
-                logger.info("Plugin enabled", name=name)
+            await self.enable(name)
+
+    async def disable(self, name: str) -> None:
+        plugin = self._plugins.get(name)
+        if not plugin:
+            raise KeyError(f"Plugin not found: {name}")
+        await plugin.on_disable()
+        prefix = f"{name}."
+        self._extensions = {key: value for key, value in self._extensions.items()
+                            if not key.startswith(prefix)}
+        self._states[name] = PluginState("disabled")
 
     async def disable_all(self) -> None:
-        """反向顺序禁用所有插件"""
         for name in reversed(self._load_order):
-            plugin = self._plugins.get(name)
-            if plugin:
-                await plugin.on_disable()
-                logger.info("Plugin disabled", name=name)
-
-    def register(self, plugin: PluginProtocol) -> None:
-        """手动注册插件"""
-        self._plugins[plugin.name] = plugin
+            if self._states[name].status == "enabled":
+                try:
+                    await self.disable(name)
+                except Exception as exc:
+                    self._states[name] = PluginState("error", str(exc))
+                    logger.exception("Plugin shutdown failed", name=name)
 
     def get_extension(self, name: str):
-        """按名称获取扩展点接口"""
         return self._extensions.get(name)
 
     def get_plugin(self, name: str) -> PluginProtocol | None:
         return self._plugins.get(name)
+
+    def health(self) -> dict:
+        return {name: {"version": self._plugins[name].version, "status": state.status,
+                       "error": state.error, "dependencies": self._plugins[name].dependencies}
+                for name, state in self._states.items()}

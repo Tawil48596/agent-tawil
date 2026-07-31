@@ -103,6 +103,17 @@ def create_app(config: dict[str, Any]) -> FastAPI:
     async def lifespan(app: FastAPI):
         """应用生命周期管理"""
         logger.info("Starting AI Agent Platform...", version="0.4.0")
+        from core.di_container import DIContainer
+        from core.event_bus import EventBus
+        from core.plugin_manager import PluginManager
+        container = DIContainer()
+        event_bus = EventBus()
+        plugin_manager = PluginManager(["plugins"], event_bus=event_bus, container=container)
+        container.register("config", config)
+        container.register("event_bus", event_bus)
+        app.state.container = container
+        app.state.event_bus = event_bus
+        app.state.plugin_manager = plugin_manager
 
         # ── Phase 1: Agent 引擎 ──
         from plugins.agent_engine.model_router import ModelRouter
@@ -434,6 +445,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
         # ── Graceful shutdown ──
         logger.info("Shutting down...")
+        await plugin_manager.disable_all()
         await task_queue.stop()
         session_store.close()
         logger.info("Goodbye.")
@@ -505,6 +517,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
             "status": "ok",
             "version": "0.4.0",
             "config_loaded": bool(config),
+            "plugins": app.state.plugin_manager.health(),
         }
 
     # ── Config inspection (dev only) ──
