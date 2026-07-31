@@ -121,6 +121,7 @@ class AgentEngine:
                 )
 
                 full_text = ""
+                reasoning_content = ""
                 tool_calls_buffer: dict[int, dict] = {}
                 finish_reason = None
                 turn_usage = self._empty_usage()
@@ -140,12 +141,18 @@ class AgentEngine:
                         full_text += delta.content
                         yield {"type": "text", "content": delta.content}
 
-                    if delta.tool_calls:
-                        for tc in delta.tool_calls:
+                    reasoning_piece = self._reasoning_content(delta)
+                    if reasoning_piece:
+                        reasoning_content += reasoning_piece
+
+                    delta_tool_calls = getattr(delta, "tool_calls", None)
+                    if delta_tool_calls:
+                        for tc in delta_tool_calls:
                             idx = tc.index
                             if idx not in tool_calls_buffer:
                                 tool_calls_buffer[idx] = {
                                     "id": tc.id or "",
+                                    "type": getattr(tc, "type", None) or "function",
                                     "function": {"name": "", "arguments": ""},
                                 }
                             if tc.id:
@@ -178,11 +185,14 @@ class AgentEngine:
 
                     results = await self.tool_dispatcher.execute_parallel(tool_calls_list)
                     yield {"type": "tool_results", "results": results}
-                    messages.append({
+                    assistant_message = {
                         "role": "assistant",
-                        "content": None,
+                        "content": full_text or "",
                         "tool_calls": tool_calls_list,
-                    })
+                    }
+                    if reasoning_content:
+                        assistant_message["reasoning_content"] = reasoning_content
+                    messages.append(assistant_message)
                     for i, result in enumerate(results):
                         messages.append({
                             "role": "tool",
@@ -271,17 +281,22 @@ class AgentEngine:
             tool_calls_raw = [
                 {
                     "id": tc.id,
+                    "type": getattr(tc, "type", None) or "function",
                     "function": {"name": tc.function.name, "arguments": tc.function.arguments},
                 }
                 for tc in choice.message.tool_calls
             ]
             results = await self.tool_dispatcher.execute_parallel(tool_calls_raw)
 
-            messages.append({
+            assistant_message = {
                 "role": "assistant",
-                "content": choice.message.content,
+                "content": choice.message.content or "",
                 "tool_calls": tool_calls_raw,
-            })
+            }
+            reasoning_content = self._reasoning_content(choice.message)
+            if reasoning_content:
+                assistant_message["reasoning_content"] = reasoning_content
+            messages.append(assistant_message)
             for i, result in enumerate(results):
                 messages.append({
                     "role": "tool",
@@ -352,10 +367,20 @@ class AgentEngine:
         formatted_tools = self._format_tools(tools) if route.supports_tools else None
         if formatted_tools:
             kwargs["tools"] = formatted_tools
-            kwargs["tool_choice"] = "auto"
+            if route.provider != "deepseek":
+                kwargs["tool_choice"] = "auto"
         if route.supports_reasoning_effort and reasoning_effort in {"low", "medium", "high"}:
             kwargs["reasoning_effort"] = reasoning_effort
         return kwargs
+
+    @staticmethod
+    def _reasoning_content(message: Any) -> str:
+        value = getattr(message, "reasoning_content", None)
+        if value is None:
+            model_extra = getattr(message, "model_extra", None)
+            if isinstance(model_extra, dict):
+                value = model_extra.get("reasoning_content")
+        return value or ""
 
     @staticmethod
     def _usage_value(source: Any, *names: str) -> int:
