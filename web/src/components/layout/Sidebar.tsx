@@ -12,6 +12,7 @@ import {
   Wrench,
 } from "lucide-react";
 
+import { APP_VERSION } from "@/lib/constants";
 import { cn, truncate } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 
@@ -54,7 +55,9 @@ export function Sidebar() {
           </span>
           <div className="leading-tight">
             <h1 className="text-sm font-semibold tracking-tight">Agent Studio</h1>
-            <p className="text-[10px] text-[#9ca9c9] mt-0.5">AI workspace · v0.1.1</p>
+            <p className="text-[10px] text-[#9ca9c9] mt-0.5">
+              AI workspace · v{APP_VERSION}
+            </p>
           </div>
         </div>
       </div>

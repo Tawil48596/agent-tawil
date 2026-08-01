@@ -79,8 +79,18 @@ class ToolDispatcher:
         # 参数可能是 JSON 字符串
         try:
             args = json.loads(args_str) if isinstance(args_str, str) else args_str
-        except json.JSONDecodeError:
-            args = {}
+        except json.JSONDecodeError as error:
+            return {
+                "name": name,
+                "output": f"错误: 工具参数不是有效 JSON: {error.msg}",
+                "error": True,
+            }
+        if not isinstance(args, dict):
+            return {
+                "name": name,
+                "output": "错误: 工具参数必须是 JSON 对象",
+                "error": True,
+            }
 
         logger.info("Executing tool", name=name, args=args)
 
@@ -97,10 +107,24 @@ class ToolDispatcher:
                 handler(**args) if asyncio.iscoroutinefunction(handler) else _run_sync(handler, **args),
                 timeout=self._timeout,
             )
+            if isinstance(output, str):
+                output_text = output
+            elif isinstance(output, (dict, list)):
+                output_text = json.dumps(output, ensure_ascii=False, default=str)
+            else:
+                output_text = str(output)
+
+            structured_error = isinstance(output, dict) and bool(output.get("error"))
+            if isinstance(output, str):
+                try:
+                    payload = json.loads(output)
+                    structured_error = isinstance(payload, dict) and bool(payload.get("error"))
+                except json.JSONDecodeError:
+                    pass
             return {
                 "name": name,
-                "output": str(output) if not isinstance(output, str) else output,
-                "error": False,
+                "output": output_text,
+                "error": structured_error,
             }
         except asyncio.TimeoutError:
             return {

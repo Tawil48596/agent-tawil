@@ -296,8 +296,27 @@ def create_app(config: dict[str, Any]) -> FastAPI:
             handler=web_search, tags=["search", "web"], genui_component="SearchResultList",
         ))
         tool_registry.register(ToolDef(
-            name="web_extract", description="提取网页内容", toolset="builtin",
-            parameters={"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
+            name="web_extract",
+            description="提取网页正文，内容由 JavaScript 渲染时可启用浏览器模式",
+            toolset="builtin",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "format": "uri"},
+                    "render_js": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "强制使用浏览器渲染动态页面",
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "default": 20000,
+                        "minimum": 1000,
+                        "maximum": 50000,
+                    },
+                },
+                "required": ["url"],
+            },
             handler=web_extract, tags=["web", "extract"], genui_component="ArticleViewer",
         ))
         tool_registry.register(ToolDef(
