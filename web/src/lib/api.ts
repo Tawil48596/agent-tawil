@@ -40,6 +40,13 @@ export const api = {
   // Tools
   listTools: () => fetchJSON(`${API}/tools`),
   getToolStats: () => fetchJSON(`${API}/tools/stats`),
+  listToolApprovals: (sessionId: string) =>
+    fetchJSON(`${API}/security/tool-approvals?session_id=${encodeURIComponent(sessionId)}`),
+  decideToolApproval: (requestId: string, decision: "approve" | "deny") =>
+    fetchJSON(`${API}/security/tool-approvals/${requestId}`, {
+      method: "POST",
+      body: JSON.stringify({ decision }),
+    }),
   // Health
   health: () => fetchJSON("/health"),
 };

@@ -15,6 +15,8 @@ export function ChatHeader() {
   const toolsEnabled = useChatStore((s) => s.toolsEnabled);
   const setToolsEnabled = useChatStore((s) => s.setToolsEnabled);
   const tools = useChatStore((s) => s.tools);
+  const dangerousToolsEnabled = useChatStore((s) => s.dangerousToolsEnabled);
+  const toggleDangerousTool = useChatStore((s) => s.toggleDangerousTool);
   const activeId = useChatStore((s) => s.activeId);
   const error = useChatStore((s) => s.error);
   const messages = useChatStore((s) => s.messages);
@@ -76,6 +78,27 @@ export function ChatHeader() {
       >
         <Wrench size={14} /> 工具{toolsEnabled ? "开启" : "关闭"}
       </button>
+      {toolsEnabled && tools.some((tool) => tool.is_dangerous) && (
+        <details className="relative">
+          <summary className="cursor-pointer list-none rounded-lg border border-[#fbbf24]/30 px-3 py-2 text-xs text-[#fde68a] focus:outline-none focus:ring-2 focus:ring-[#7899ff]/40">
+            受保护工具 {dangerousToolsEnabled.length || ""}
+          </summary>
+          <fieldset className="absolute left-0 top-[calc(100%+8px)] z-50 w-72 rounded-xl border border-[#fbbf24]/30 bg-[#10182a] p-3 shadow-2xl">
+            <legend className="px-1 text-xs font-semibold text-[#fde68a]">每次调用仍需批准</legend>
+            {tools.filter((tool) => tool.is_dangerous).map((tool) => (
+              <label key={tool.name} className="mt-2 flex min-h-9 cursor-pointer items-center gap-2 rounded-lg px-2 text-xs text-[#dce5ff] hover:bg-white/5">
+                <input
+                  type="checkbox"
+                  checked={dangerousToolsEnabled.includes(tool.name)}
+                  onChange={() => toggleDangerousTool(tool.name)}
+                  className="h-4 w-4 accent-[#fbbf24]"
+                />
+                <span className="min-w-0 truncate">{tool.name}</span>
+              </label>
+            ))}
+          </fieldset>
+        </details>
+      )}
       <select value={task} onChange={(e) => setTask(e.target.value)}
         className="bg-[#18233b] text-sm border border-white/10 rounded-lg px-3 py-2 text-[#e1e4ea] focus:outline-none focus:ring-2 focus:ring-[#7899ff]/40">
         <option value="reasoning">推理</option>
