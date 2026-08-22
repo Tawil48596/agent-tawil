@@ -500,7 +500,11 @@ def create_app(config: dict[str, Any]) -> FastAPI:
             max_pass_rate_regression=eval_cfg.get("max_pass_rate_regression", 0.0),
             history_limit=eval_cfg.get("history_limit", 100),
         )
-        trace_collector = TraceCollector()
+        trace_cfg = config.get("observability", {}).get("traces", {})
+        trace_collector = TraceCollector(
+            max_traces=trace_cfg.get("max_traces", 1000),
+            storage_path=trace_cfg.get("path", "data/traces/history.json"),
+        )
         telegram_bot = TelegramAdapter()
         messaging_gateway = MessagingGateway(
             config.get("messaging", {}),

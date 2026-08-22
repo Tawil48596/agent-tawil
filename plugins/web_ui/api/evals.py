@@ -46,9 +46,23 @@ async def eval_history(request: Request, suite: str | None = None, limit: int = 
 
 
 @router.get("/traces")
-async def list_traces(limit: int = 50, request: Request = None):
+async def list_traces(
+    limit: int = 50,
+    error_only: bool = False,
+    min_latency_ms: int = 0,
+    request: Request = None,
+):
     collector = request.app.state.trace_collector
-    return {"traces": collector.list_traces(limit)}
+    return {
+        "traces": collector.list_traces(
+            min(max(limit, 1), 200), error_only, max(min_latency_ms, 0)
+        )
+    }
+
+
+@router.get("/traces/stats")
+async def trace_stats(request: Request):
+    return request.app.state.trace_collector.get_stats()
 
 
 @router.get("/traces/{trace_id}")
@@ -58,8 +72,3 @@ async def get_trace(trace_id: str, request: Request):
     if not trace:
         raise HTTPException(404, "Trace not found")
     return trace.to_dict()
-
-
-@router.get("/traces/stats")
-async def trace_stats(request: Request):
-    return request.app.state.trace_collector.get_stats()
