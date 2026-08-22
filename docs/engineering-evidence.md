@@ -9,6 +9,7 @@
 | 多 Provider Agent 与工具循环 | `plugins/agent_engine/engine.py`、`model_router.py`、`tool_dispatch.py` | `tests/test_agent/test_engine.py`、`tests/test_evals/test_fake_llm.py` |
 | 确定性离线 LLM 评测 | `plugins/evals/fake_llm.py`、`runner.py`、`metrics.py` | 无真实 API Key 即可验证流式响应、工具调用、Token 和工具准确率 |
 | 持久评测基线与回归门禁 | `plugins/evals/runner.py`、`scripts/run_offline_eval.py` | 同一测试集跨重启比较通过率；输出 `gate_passed` 并以进程退出码表示结果 |
+| 参数、Token 与延迟预算 | `plugins/evals/runner.py`、`metrics.py` | 离线评测同时验证工具参数准确率和资源预算，超预算计入门禁失败 |
 | 高风险工具审批 | `plugins/security/tool_approval.py`、`plugins/web_ui/api/tools.py` | `tests/test_tools/test_tool_dispatch.py` 覆盖允许、拒绝、过期和审计路径 |
 | 认证与生产启动基线 | `plugins/web_ui/api/auth.py`、`plugins/security/baseline.py` | `tests/test_security/test_auth.py`、`test_production_baseline.py` |
 | Web 抓取网络边界 | `plugins/security/network_policy.py`、`plugins/tool_market/builtin/web_search.py` | `tests/test_tools/test_web_extract.py` 覆盖私网、重定向和内容限制 |
