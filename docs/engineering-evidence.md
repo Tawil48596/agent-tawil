@@ -22,6 +22,7 @@
 | 全栈质量门禁 | `.github/workflows/test.yml` | Python 3.11/3.12、覆盖率、前端构建、依赖审查和 CodeQL |
 | 浏览器与故障演练 | `scripts/run_browser_smoke.py`、`run_fault_drills.py` | 本地真实浏览器已验证健康、首页和设置；CI 安装 Chromium 后重复执行 |
 | 数据版本与备份恢复 | `shared/versioned_store.py`、`data_backup.py` | 旧格式兼容、未知版本拒绝、清单哈希校验、路径穿越拒绝和临时目录恢复测试 |
+| 可复现发布证据 | `scripts/run_release_gates.py`、`shared/release_checks.py` | 统一执行测试、评测、演练、备份和构建，凭据扫描不回显值，JSON 结果默认写入忽略目录 |
 
 ## 恢复语义
 
@@ -50,6 +51,9 @@ python scripts/run_fault_drills.py
 python -m scripts.backup_data --create backup.zip
 python -m scripts.backup_data --verify backup.zip
 python -m scripts.backup_data --restore backup.zip --data-root restored-data
+
+# 完整发布候选门禁；证据默认写入 data/release/evidence.json
+python -m scripts.run_release_gates
 
 # Web 生产构建
 Set-Location web
