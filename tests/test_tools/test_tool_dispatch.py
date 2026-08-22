@@ -202,5 +202,40 @@ async def test_changed_arguments_do_not_replay_same_call_id(tmp_path):
         [_call("echo", '{"value":"second"}', "call-1")], context={"id": "session-1"}
     )
 
-    assert changed[0]["output"] == "second"
-    assert calls == 2
+    assert changed[0]["code"] == "tool_call_conflict"
+    assert calls == 1
+
+
+def test_active_and_expired_leases_fail_closed_until_resolved(tmp_path):
+    ledger = ToolExecutionLedger(tmp_path, lease_seconds=60)
+    first = ledger.acquire("session-1", "call-1", "write", {"value": 1})
+
+    assert first["action"] == "execute"
+    assert ledger.acquire("session-1", "call-1", "write", {"value": 1})["action"] == "busy"
+
+    expired = ToolExecutionLedger(tmp_path, lease_seconds=0)
+    path = expired._entry_path("session-1", "call-1")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["lease_expires_at"] = 0
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert expired.acquire("session-1", "call-1", "write", {"value": 1})["action"] == "uncertain"
+    assert expired.resolve_uncertain("session-1", "call-1") is True
+    assert expired.acquire("session-1", "call-1", "write", {"value": 1})["action"] == "execute"
+
+
+@pytest.mark.asyncio
+async def test_handler_exception_becomes_uncertain(tmp_path):
+    async def may_have_written():
+        raise RuntimeError("connection lost after write")
+
+    dispatcher = ToolDispatcher()
+    dispatcher.set_execution_ledger(ToolExecutionLedger(tmp_path))
+    dispatcher.register("write", may_have_written)
+    call = _call("write", "{}", "call-1")
+
+    first = await dispatcher.execute_parallel([call], context={"id": "session-1"})
+    retry = await dispatcher.execute_parallel([call], context={"id": "session-1"})
+
+    assert first[0]["error"] is True
+    assert retry[0]["code"] == "tool_execution_uncertain"

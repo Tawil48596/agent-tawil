@@ -152,7 +152,10 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         ledger_path = config.get("checkpoint", {}).get(
             "execution_ledger_path", "data/tool_executions"
         )
-        execution_ledger = ToolExecutionLedger(ledger_path)
+        execution_ledger = ToolExecutionLedger(
+            ledger_path,
+            lease_seconds=config.get("checkpoint", {}).get("tool_lease_seconds", 60),
+        )
         tool_dispatcher.set_execution_ledger(execution_ledger)
         engine = AgentEngine(router, config.get("agent", {}), tool_dispatcher)
 

@@ -176,12 +176,22 @@ class ToolDispatcher:
 
         session_id = str((context or {}).get("id", ""))
         call_id = str(tool_call.get("id", ""))
+        attempt_id = ""
         if self._execution_ledger is not None:
-            replayed = self._execution_ledger.load(session_id, call_id, name, args)
-            if replayed is not None:
+            decision = self._execution_ledger.acquire(session_id, call_id, name, args)
+            if decision["action"] == "replay":
+                replayed = decision["result"]
                 replayed["replayed"] = True
                 self._audit("tool.replayed", tool=name, context=context or {})
                 return replayed
+            if decision["action"] != "execute":
+                code = {
+                    "busy": "tool_in_progress",
+                    "uncertain": "tool_execution_uncertain",
+                    "conflict": "tool_call_conflict",
+                }[decision["action"]]
+                return {"name": name, "output": f"错误: {code}", "error": True, "code": code}
+            attempt_id = decision["attempt_id"]
 
         started = time.monotonic()
         self._audit("tool.started", tool=name, arguments=args, context=context or {})
@@ -218,9 +228,16 @@ class ToolDispatcher:
                 context=context or {},
             )
             if self._execution_ledger is not None:
-                self._execution_ledger.store(session_id, call_id, name, args, result)
+                if structured_error:
+                    self._execution_ledger.release(session_id, call_id, attempt_id)
+                else:
+                    self._execution_ledger.store(session_id, call_id, name, args, result)
             return result
         except asyncio.TimeoutError:
+            if self._execution_ledger is not None:
+                self._execution_ledger.mark_uncertain(
+                    session_id, call_id, attempt_id, "execution_timeout"
+                )
             self._audit("tool.timeout", tool=name, context=context or {})
             return {
                 "name": name,
@@ -228,6 +245,10 @@ class ToolDispatcher:
                 "error": True,
             }
         except Exception as e:
+            if self._execution_ledger is not None:
+                self._execution_ledger.mark_uncertain(
+                    session_id, call_id, attempt_id, "execution_failed"
+                )
             self._audit("tool.failed", tool=name, error_type=type(e).__name__, context=context or {})
             logger.warning("Tool execution failed", name=name, error=str(e))
             return {
