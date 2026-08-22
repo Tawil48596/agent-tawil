@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+- 内置 mattpocock/skills 的 25 个正式工程与生产力 Skill，并固定上游提交和 MIT 许可证。
+- 增加 `AGENTS.md`、GitHub Issues、分类标签和单上下文领域文档约定，使项目 Agent 工作流可复现。
+
 ## 2.0.0（本地发布）
 
 - 汇总 1.4–1.9 的可靠执行、可复现评测、持久 Trace、故障演练、数据恢复和发布门禁。

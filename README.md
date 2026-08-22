@@ -67,6 +67,12 @@
 
 实现入口、恢复语义、验证命令、架构取舍和可用于简历的准确表述见 [工程证据与面试说明](docs/engineering-evidence.md)。生产边界仍以 [架构文档](docs/architecture.md) 为准。
 
+## 项目内置工程 Skills
+
+`.agents/skills/` 固定收录 [mattpocock/skills](https://github.com/mattpocock/skills) 的 25 个正式 Engineering 与 Productivity Skills，覆盖需求澄清、规格拆分、TDD、故障诊断、代码审查和架构设计。`AGENTS.md` 只保留触发指针，具体流程按需从对应 `SKILL.md` 加载。
+
+内置副本固定到已审查的上游提交，不会自动联网更新。来源、许可证和更新步骤见 [Skill 来源说明](.agents/skills/README.md)。
+
 ## 快速开始
 
 ### Windows
