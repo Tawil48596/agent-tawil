@@ -20,6 +20,7 @@ logger = structlog.get_logger()
 class TestSuite:
     name: str
     description: str = ""
+    version: int = 1
     cases: list[dict] = field(default_factory=list)
 
 
@@ -77,6 +78,7 @@ class EvalRunner:
         return TestSuite(
             name=data.get("name", name),
             description=data.get("description", ""),
+            version=int(data.get("version", 1)),
             cases=data.get("cases", []),
         )
 
@@ -107,6 +109,7 @@ class EvalRunner:
                 structured = output if isinstance(output, dict) else {"text": str(output)}
                 text = str(structured.get("text", ""))
                 actual_tools = list(structured.get("tools", []))
+                actual_arguments = structured.get("tool_arguments", {}) or {}
                 usage = structured.get("usage", {}) or {}
 
                 kw = expected.get("keywords", [])
@@ -118,25 +121,47 @@ class EvalRunner:
                     / len(set(actual_tools) | set(expected_tools))
                     if actual_tools or expected_tools else 1.0
                 )
-                passed = keyword_score >= 0.5 and tool_accuracy == 1.0
+                expected_arguments = expected.get("tool_arguments", {}) or {}
+                argument_matches = sum(
+                    1
+                    for tool, values in expected_arguments.items()
+                    if isinstance(actual_arguments.get(tool), dict)
+                    and all(actual_arguments[tool].get(key) == value for key, value in values.items())
+                )
+                argument_accuracy = (
+                    argument_matches / len(expected_arguments) if expected_arguments else 1.0
+                )
+                total_tokens = int(usage.get("total_tokens", 0) or 0)
+                latency_ms = round(case_time * 1000)
+                latency_ok = latency_ms <= int(expected.get("max_latency_ms", 2**31))
+                tokens_ok = total_tokens <= int(expected.get("max_total_tokens", 2**31))
+                budget_passed = latency_ok and tokens_ok
+                passed = (
+                    keyword_score >= 0.5
+                    and tool_accuracy == 1.0
+                    and argument_accuracy == 1.0
+                    and budget_passed
+                )
 
                 results.append({
                     "case": case_data.get("id", ""),
                     "passed": passed,
-                    "latency_ms": round(case_time * 1000),
+                    "latency_ms": latency_ms,
                     "keywords_matched": kw_matched,
                     "keywords_expected": kw,
                     "tools_actual": actual_tools,
                     "tools_expected": expected_tools,
                     "tool_accuracy": round(tool_accuracy, 3),
-                    "score": round((keyword_score + tool_accuracy) / 2, 3),
-                    "total_tokens": int(usage.get("total_tokens", 0) or 0),
+                    "argument_accuracy": round(argument_accuracy, 3),
+                    "budget_passed": budget_passed,
+                    "score": round((keyword_score + tool_accuracy + argument_accuracy) / 3, 3),
+                    "total_tokens": total_tokens,
                 })
             except Exception as e:
                 results.append({
                     "case": case_data.get("id", ""),
                     "passed": False,
-                    "error": str(e),
+                    "error_type": type(e).__name__,
                 })
 
         elapsed = time.time() - start
@@ -145,6 +170,7 @@ class EvalRunner:
             "run_id": uuid.uuid4().hex,
             "created_at": time.time(),
             "suite": suite_name,
+            "suite_version": suite.version,
             "total": len(results),
             "passed": passed,
             "pass_rate": passed / max(len(results), 1),

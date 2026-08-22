@@ -50,6 +50,10 @@ async def run(history_path: Path) -> dict:
         return {
             "text": response.text,
             "tools": [call["function"]["name"] for call in response.tool_calls],
+            "tool_arguments": {
+                call["function"]["name"]: json.loads(call["function"]["arguments"])
+                for call in response.tool_calls
+            },
             "usage": response.usage,
         }
 

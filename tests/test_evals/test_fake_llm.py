@@ -75,6 +75,9 @@ cases:
     expected:
       keywords: [hello]
       tools: [echo]
+      tool_arguments:
+        echo: {value: hello}
+      max_total_tokens: 20
 """,
         encoding="utf-8",
     )
@@ -85,6 +88,7 @@ cases:
         return {
             "text": "hello",
             "tools": ["echo"],
+            "tool_arguments": {"echo": {"value": "hello"}},
             "usage": {"total_tokens": 12},
         }
 
@@ -92,6 +96,8 @@ cases:
 
     assert report["pass_rate"] == 1.0
     assert report["metrics"]["tool_accuracy"] == 1.0
+    assert report["metrics"]["argument_accuracy"] == 1.0
+    assert report["metrics"]["budget_failures"] == 0
     assert report["metrics"]["avg_tokens"] == 12
     assert report["regression"]["baseline_found"] is False
 
@@ -105,3 +111,25 @@ cases:
     assert regressed["regression"]["baseline_run_id"] == report["run_id"]
     assert regressed["regression"]["pass_rate_delta"] == -1.0
     assert regressed["regression"]["gate_passed"] is False
+
+
+async def test_eval_budget_failure_is_reported_without_output_payload(tmp_path):
+    (tmp_path / "budget.yaml").write_text(
+        """name: budget
+cases:
+  - id: over_budget
+    input: test
+    expected: {keywords: [ok], max_total_tokens: 5}
+""",
+        encoding="utf-8",
+    )
+    runner = EvalRunner(str(tmp_path))
+
+    async def agent_fn(_text):
+        return {"text": "ok", "usage": {"total_tokens": 6}}
+
+    report = await runner.run("budget", agent_fn)
+
+    assert report["pass_rate"] == 0.0
+    assert report["metrics"]["budget_failures"] == 1
+    assert "text" not in report["results"][0]
