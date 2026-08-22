@@ -21,6 +21,7 @@
 | 跨重启 Trace 摘要 | `plugins/evals/trace_viewer.py`、`plugins/web_ui/api/evals.py` | 持久化、错误过滤、延迟过滤和输入/输出不落盘测试 |
 | 全栈质量门禁 | `.github/workflows/test.yml` | Python 3.11/3.12、覆盖率、前端构建、依赖审查和 CodeQL |
 | 浏览器与故障演练 | `scripts/run_browser_smoke.py`、`run_fault_drills.py` | 本地真实浏览器已验证健康、首页和设置；CI 安装 Chromium 后重复执行 |
+| 数据版本与备份恢复 | `shared/versioned_store.py`、`data_backup.py` | 旧格式兼容、未知版本拒绝、清单哈希校验、路径穿越拒绝和临时目录恢复测试 |
 
 ## 恢复语义
 
@@ -44,6 +45,11 @@ python scripts/run_offline_eval.py
 # 服务启动后执行真实浏览器冒烟；故障演练无需外部服务
 python scripts/run_browser_smoke.py
 python scripts/run_fault_drills.py
+
+# 创建、校验及恢复本地 data 目录；归档仍可能包含私密会话，不应提交
+python -m scripts.backup_data --create backup.zip
+python -m scripts.backup_data --verify backup.zip
+python -m scripts.backup_data --restore backup.zip --data-root restored-data
 
 # Web 生产构建
 Set-Location web
