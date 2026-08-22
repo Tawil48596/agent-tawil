@@ -34,6 +34,7 @@ class AgentEngine:
         router: ModelRouter,
         agent_config: dict[str, Any],
         tool_dispatcher: Optional[ToolDispatcher] = None,
+        completion_fn: Any = None,
     ):
         self.router = router
         self.max_turns = agent_config.get("max_turns", 50)
@@ -41,6 +42,7 @@ class AgentEngine:
         self.prompt_builder = PromptBuilder()
         self.context_manager = ContextManager()
         self.tool_dispatcher = tool_dispatcher or ToolDispatcher()
+        self._completion_fn = completion_fn
 
     # ── 同步运行 ──
 
@@ -115,7 +117,7 @@ class AgentEngine:
                 completion_kwargs = self._completion_kwargs(
                     route_result, messages, enabled_tools, reasoning_effort
                 )
-                response = await acompletion(
+                response = await (self._completion_fn or acompletion)(
                     stream=True,
                     stream_options={"include_usage": True},
                     **completion_kwargs,
@@ -258,7 +260,7 @@ class AgentEngine:
                 messages = await self.context_manager.compress(messages, route_result)
 
             try:
-                response = await acompletion(**self._completion_kwargs(
+                response = await (self._completion_fn or acompletion)(**self._completion_kwargs(
                     route_result, messages, enabled_tools, reasoning_effort
                 ))
             except Exception as e:
