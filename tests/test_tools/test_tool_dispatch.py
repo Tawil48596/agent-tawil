@@ -3,10 +3,14 @@ import json
 import pytest
 
 from plugins.agent_engine.tool_dispatch import ToolDispatcher
+from plugins.checkpoint.execution_ledger import ToolExecutionLedger
 
 
-def _call(name: str, arguments: str) -> dict:
-    return {"function": {"name": name, "arguments": arguments}}
+def _call(name: str, arguments: str, call_id: str = "") -> dict:
+    call = {"function": {"name": name, "arguments": arguments}}
+    if call_id:
+        call["id"] = call_id
+    return call
 
 
 @pytest.mark.asyncio
@@ -127,3 +131,76 @@ async def test_model_arguments_cannot_self_approve_tool_call():
     ])
 
     assert result[0]["code"] == "approval_required"
+
+
+@pytest.mark.asyncio
+async def test_successful_tool_call_is_replayed_after_dispatcher_restart(tmp_path):
+    calls = 0
+
+    async def side_effect():
+        nonlocal calls
+        calls += 1
+        return "created"
+
+    ledger = ToolExecutionLedger(tmp_path)
+    first = ToolDispatcher()
+    first.set_execution_ledger(ledger)
+    first.register("create", side_effect)
+    result = await first.execute_parallel(
+        [_call("create", "{}", "call-1")], context={"id": "session-1"}
+    )
+
+    restarted = ToolDispatcher()
+    restarted.set_execution_ledger(ToolExecutionLedger(tmp_path))
+    restarted.register("create", side_effect)
+    replay = await restarted.execute_parallel(
+        [_call("create", "{}", "call-1")], context={"id": "session-1"}
+    )
+
+    assert result[0]["error"] is False
+    assert replay[0]["replayed"] is True
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_tool_call_is_not_cached(tmp_path):
+    calls = 0
+
+    async def retryable():
+        nonlocal calls
+        calls += 1
+        return {"error": "try again"}
+
+    dispatcher = ToolDispatcher()
+    dispatcher.set_execution_ledger(ToolExecutionLedger(tmp_path))
+    dispatcher.register("retryable", retryable)
+    call = _call("retryable", "{}", "call-1")
+
+    await dispatcher.execute_parallel([call], context={"id": "session-1"})
+    await dispatcher.execute_parallel([call], context={"id": "session-1"})
+
+    assert calls == 2
+
+
+@pytest.mark.asyncio
+async def test_changed_arguments_do_not_replay_same_call_id(tmp_path):
+    calls = 0
+
+    async def echo(value):
+        nonlocal calls
+        calls += 1
+        return value
+
+    dispatcher = ToolDispatcher()
+    dispatcher.set_execution_ledger(ToolExecutionLedger(tmp_path))
+    dispatcher.register("echo", echo)
+
+    await dispatcher.execute_parallel(
+        [_call("echo", '{"value":"first"}', "call-1")], context={"id": "session-1"}
+    )
+    changed = await dispatcher.execute_parallel(
+        [_call("echo", '{"value":"second"}', "call-1")], context={"id": "session-1"}
+    )
+
+    assert changed[0]["output"] == "second"
+    assert calls == 2

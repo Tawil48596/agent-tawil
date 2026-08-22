@@ -145,9 +145,15 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         from plugins.agent_engine.model_router import ModelRouter
         from plugins.agent_engine.engine import AgentEngine
         from plugins.agent_engine.tool_dispatch import ToolDispatcher
+        from plugins.checkpoint.execution_ledger import ToolExecutionLedger
 
         router = ModelRouter(config)
         tool_dispatcher = ToolDispatcher()
+        ledger_path = config.get("checkpoint", {}).get(
+            "execution_ledger_path", "data/tool_executions"
+        )
+        execution_ledger = ToolExecutionLedger(ledger_path)
+        tool_dispatcher.set_execution_ledger(execution_ledger)
         engine = AgentEngine(router, config.get("agent", {}), tool_dispatcher)
 
         async def _echo(text: str) -> str:
@@ -160,6 +166,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
         app.state.model_router = router
         app.state.tool_dispatcher = tool_dispatcher
+        app.state.execution_ledger = execution_ledger
         app.state.agent_engine = engine
 
         available = router.list_available_models()

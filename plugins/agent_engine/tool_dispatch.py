@@ -32,6 +32,7 @@ class ToolDispatcher:
         self._approval_required: set[str] = set()
         self._approval_handler = approval_handler
         self._audit_handler: Callable[..., Any] | None = None
+        self._execution_ledger: Any | None = None
         self._timeout = timeout
 
     def register(self, name: str, handler: Any, *, requires_approval: bool = False):
@@ -55,6 +56,10 @@ class ToolDispatcher:
         self, handler: Callable[..., Any] | None
     ) -> None:
         self._audit_handler = handler
+
+    def set_execution_ledger(self, ledger: Any | None) -> None:
+        """Bind durable storage for completed tool-call results."""
+        self._execution_ledger = ledger
 
     def _audit(self, event_type: str, **fields: Any) -> None:
         if self._audit_handler is None:
@@ -169,6 +174,15 @@ class ToolDispatcher:
 
             self._audit("tool.approval_approved", tool=name, context=context or {})
 
+        session_id = str((context or {}).get("id", ""))
+        call_id = str(tool_call.get("id", ""))
+        if self._execution_ledger is not None:
+            replayed = self._execution_ledger.load(session_id, call_id, name, args)
+            if replayed is not None:
+                replayed["replayed"] = True
+                self._audit("tool.replayed", tool=name, context=context or {})
+                return replayed
+
         started = time.monotonic()
         self._audit("tool.started", tool=name, arguments=args, context=context or {})
         try:
@@ -203,6 +217,8 @@ class ToolDispatcher:
                 output_length=len(output_text),
                 context=context or {},
             )
+            if self._execution_ledger is not None:
+                self._execution_ledger.store(session_id, call_id, name, args, result)
             return result
         except asyncio.TimeoutError:
             self._audit("tool.timeout", tool=name, context=context or {})
