@@ -172,12 +172,16 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         from plugins.security.execution_guard import ExecutionGuard
         from plugins.security.output_guard import OutputGuard
         from plugins.security.tool_approval import ToolApproval
+        from plugins.observability.audit import AuditLog
 
         app.state.content_filter = ContentFilter()
         app.state.execution_guard = ExecutionGuard(config.get("security", {}))
         app.state.output_guard = OutputGuard()
         tool_approval = ToolApproval(config.get("security", {}))
         app.state.tool_approval = tool_approval
+        audit_log = AuditLog(config.get("security", {}).get("audit_log", {}))
+        app.state.audit_log = audit_log
+        tool_dispatcher.set_audit_handler(audit_log.record)
 
         async def _request_tool_approval(name: str, arguments: dict, context: dict) -> bool:
             approval = await tool_approval.request_approval(
@@ -694,7 +698,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         }
 
     @app.post("/api/v1/security/tool-approvals/{request_id}")
-    async def decide_tool_approval(request_id: str, body: dict):
+    async def decide_tool_approval(request_id: str, body: dict, request: Request):
         """Approve or deny one pending protected-tool request."""
         decision = body.get("decision")
         if decision not in {"approve", "deny"}:
@@ -706,6 +710,12 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         )
         if not handled:
             raise HTTPException(404, "Pending approval not found")
+        app.state.audit_log.record(
+            "approval.approved" if decision == "approve" else "approval.denied",
+            request_id=request_id,
+            trace_id=getattr(request.state, "trace_id", ""),
+            user_id=getattr(request.state, "user_id", "anonymous"),
+        )
         return {
             "ok": True,
             "status": "approved" if decision == "approve" else "denied",

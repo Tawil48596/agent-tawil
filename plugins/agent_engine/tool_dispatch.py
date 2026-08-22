@@ -3,6 +3,7 @@
 import asyncio
 import inspect
 import json
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -30,6 +31,7 @@ class ToolDispatcher:
         self._registry: dict[str, Any] = {}  # tool_name → handler
         self._approval_required: set[str] = set()
         self._approval_handler = approval_handler
+        self._audit_handler: Callable[..., Any] | None = None
         self._timeout = timeout
 
     def register(self, name: str, handler: Any, *, requires_approval: bool = False):
@@ -48,6 +50,19 @@ class ToolDispatcher:
     ) -> None:
         """Bind an application-owned approval decision provider."""
         self._approval_handler = handler
+
+    def set_audit_handler(
+        self, handler: Callable[..., Any] | None
+    ) -> None:
+        self._audit_handler = handler
+
+    def _audit(self, event_type: str, **fields: Any) -> None:
+        if self._audit_handler is None:
+            return
+        try:
+            self._audit_handler(event_type, **fields)
+        except Exception:
+            logger.warning("Audit handler failed", event_type=event_type)
 
     def unregister(self, name: str):
         """注销工具"""
@@ -122,7 +137,7 @@ class ToolDispatcher:
                 "error": True,
             }
 
-        logger.info("Executing tool", name=name, args=args)
+        logger.info("Executing tool", name=name, argument_names=sorted(args))
 
         handler = self._registry.get(name)
         if handler is None:
@@ -134,6 +149,7 @@ class ToolDispatcher:
 
         if name in self._approval_required:
             if self._approval_handler is None:
+                self._audit("tool.approval_required", tool=name, context=context or {})
                 return {
                     "name": name,
                     "output": f"错误: 工具 '{name}' 需要外部审批",
@@ -143,6 +159,7 @@ class ToolDispatcher:
             decision = self._approval_handler(name, args, context or {})
             approved = await decision if inspect.isawaitable(decision) else decision
             if approved is not True:
+                self._audit("tool.approval_denied", tool=name, context=context or {})
                 return {
                     "name": name,
                     "output": f"错误: 工具 '{name}' 的审批被拒绝",
@@ -150,6 +167,10 @@ class ToolDispatcher:
                     "code": "approval_denied",
                 }
 
+            self._audit("tool.approval_approved", tool=name, context=context or {})
+
+        started = time.monotonic()
+        self._audit("tool.started", tool=name, arguments=args, context=context or {})
         try:
             output = await asyncio.wait_for(
                 handler(**args) if asyncio.iscoroutinefunction(handler) else _run_sync(handler, **args),
@@ -169,18 +190,29 @@ class ToolDispatcher:
                     structured_error = isinstance(payload, dict) and bool(payload.get("error"))
                 except json.JSONDecodeError:
                     pass
-            return {
+            result = {
                 "name": name,
                 "output": output_text,
                 "error": structured_error,
             }
+            self._audit(
+                "tool.completed",
+                tool=name,
+                error=structured_error,
+                duration_ms=round((time.monotonic() - started) * 1000, 2),
+                output_length=len(output_text),
+                context=context or {},
+            )
+            return result
         except asyncio.TimeoutError:
+            self._audit("tool.timeout", tool=name, context=context or {})
             return {
                 "name": name,
                 "output": f"错误: 工具 '{name}' 执行超时 ({self._timeout}s)",
                 "error": True,
             }
         except Exception as e:
+            self._audit("tool.failed", tool=name, error_type=type(e).__name__, context=context or {})
             logger.warning("Tool execution failed", name=name, error=str(e))
             return {
                 "name": name,

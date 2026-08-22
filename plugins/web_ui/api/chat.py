@@ -263,7 +263,11 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
         try:
             async for event in engine.run_stream(
                 user_message=body.content,
-                session={"id": session_id, "source": "web"},
+                session={
+                    "id": session_id,
+                    "source": "web",
+                    "trace_id": getattr(request.state, "trace_id", ""),
+                },
                 history=current_history,
                 enabled_tools=enabled_tools,
                 override_model=body.model,
