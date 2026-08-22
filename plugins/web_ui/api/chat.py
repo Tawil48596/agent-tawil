@@ -221,6 +221,13 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
 
     async def event_stream():
         store = _store(request)
+        metrics = getattr(request.app.state, "metrics_collector", None)
+        traces = getattr(request.app.state, "trace_collector", None)
+        trace = traces.start_trace(
+            name="chat",
+            trace_id=getattr(request.state, "trace_id", None),
+        ) if traces else None
+        pending_tool_spans = []
         current_history = _history(request, session_id)
         last_message = current_history[-1] if current_history else None
         is_same_pending_message = (
@@ -274,6 +281,35 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
                 task_type=task_type,
                 reasoning_effort=None if body.reasoning_effort == "auto" else body.reasoning_effort,
             ):
+                if trace and event.get("type") == "tool_calls":
+                    pending_tool_spans = [
+                        traces.add_span(
+                            trace,
+                            "tool_call",
+                            call.get("function", {}).get("name", "unknown"),
+                        )
+                        for call in event.get("calls", [])
+                    ]
+                elif trace and event.get("type") == "tool_results":
+                    for span, result in zip(pending_tool_spans, event.get("results", [])):
+                        traces.end_span(
+                            span,
+                            output={
+                                "error": bool(result.get("error")),
+                                "replayed": bool(result.get("replayed")),
+                            },
+                            error="tool_error" if result.get("error") else None,
+                        )
+                if event.get("type") == "done":
+                    usage = event.get("usage") or {}
+                    if metrics:
+                        metrics.record_llm_usage(usage)
+                    if trace:
+                        traces.end_span(
+                            trace,
+                            tokens_in=int(usage.get("input_tokens", 0) or 0),
+                            tokens_out=int(usage.get("output_tokens", 0) or 0),
+                        )
                 if event.get("type") == "done" and event.get("content"):
                     usage = event.get("usage") or {}
                     if store:
@@ -297,9 +333,19 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
                             "usage": usage,
                         })
                     event["session_usage"] = session_usage
+                elif event.get("type") == "error" and trace:
+                    for span in pending_tool_spans:
+                        if span.end_time is None:
+                            traces.end_span(span, error="interrupted")
+                    traces.end_span(trace, error=str(event.get("code", "llm_error")))
                 yield {"event": "message", "data": json.dumps(event, ensure_ascii=False, default=str)}
 
         except Exception as e:
+            if trace:
+                for span in pending_tool_spans:
+                    if span.end_time is None:
+                        traces.end_span(span, error="interrupted")
+                traces.end_span(trace, error=type(e).__name__)
             yield {"event": "error", "data": json.dumps({"type": "error", "message": str(e)}, ensure_ascii=False)}
 
     return EventSourceResponse(event_stream())

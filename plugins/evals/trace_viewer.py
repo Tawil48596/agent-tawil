@@ -58,10 +58,10 @@ class TraceCollector:
         self._max_traces = max_traces
         self._active_spans: dict[str, TraceSpan] = {}  # span_id → span
 
-    def start_trace(self, name: str = "agent_run",
-                     trace_type: str = "workflow") -> TraceSpan:
+    def start_trace(self, name: str = "agent_run", trace_type: str = "workflow",
+                    trace_id: str | None = None) -> TraceSpan:
         """开始一个新的 Trace"""
-        trace_id = uuid.uuid4().hex[:12]
+        trace_id = trace_id or uuid.uuid4().hex[:12]
         root = TraceSpan(
             span_id=trace_id,
             trace_id=trace_id,

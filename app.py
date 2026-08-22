@@ -188,7 +188,11 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         app.state.tool_approval = tool_approval
         audit_log = AuditLog(config.get("security", {}).get("audit_log", {}))
         app.state.audit_log = audit_log
-        tool_dispatcher.set_audit_handler(audit_log.record)
+        def _record_tool_event(event_type: str, **fields) -> None:
+            audit_log.record(event_type, **fields)
+            metrics_collector.record_tool_event(event_type, **fields)
+
+        tool_dispatcher.set_audit_handler(_record_tool_event)
 
         async def _request_tool_approval(name: str, arguments: dict, context: dict) -> bool:
             approval = await tool_approval.request_approval(
