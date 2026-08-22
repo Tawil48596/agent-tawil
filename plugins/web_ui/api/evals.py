@@ -35,8 +35,11 @@ async def run_suite(name: str, request: Request):
 
 
 @router.get("/history")
-async def eval_history(request: Request):
-    return {"history": request.app.state.eval_runner.get_history()}
+async def eval_history(request: Request, suite: str | None = None, limit: int = 50):
+    limit = min(max(limit, 1), 200)
+    return {
+        "history": request.app.state.eval_runner.get_history(suite=suite, limit=limit)
+    }
 
 
 # ── Trace ──

@@ -486,7 +486,13 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         from plugins.messaging.platforms.telegram import TelegramAdapter
         from plugins.messaging.gateway import MessagingGateway
 
-        eval_runner = EvalRunner()
+        eval_cfg = config.get("evals", {})
+        eval_runner = EvalRunner(
+            suites_dir=eval_cfg.get("suites_dir", "plugins/evals/test_suites"),
+            history_path=eval_cfg.get("history_path", "data/evals/history.json"),
+            max_pass_rate_regression=eval_cfg.get("max_pass_rate_regression", 0.0),
+            history_limit=eval_cfg.get("history_limit", 100),
+        )
         trace_collector = TraceCollector()
         telegram_bot = TelegramAdapter()
         messaging_gateway = MessagingGateway(

@@ -78,7 +78,8 @@ cases:
 """,
         encoding="utf-8",
     )
-    runner = EvalRunner(str(tmp_path))
+    history_path = tmp_path / "history.json"
+    runner = EvalRunner(str(tmp_path), history_path=str(history_path))
 
     async def agent_fn(_text: str) -> dict:
         return {
@@ -92,3 +93,15 @@ cases:
     assert report["pass_rate"] == 1.0
     assert report["metrics"]["tool_accuracy"] == 1.0
     assert report["metrics"]["avg_tokens"] == 12
+    assert report["regression"]["baseline_found"] is False
+
+    async def regressed_agent(_text: str) -> dict:
+        return {"text": "miss", "tools": [], "usage": {"total_tokens": 2}}
+
+    restarted = EvalRunner(str(tmp_path), history_path=str(history_path))
+    regressed = await restarted.run("offline", regressed_agent)
+
+    assert len(restarted.get_history("offline")) == 2
+    assert regressed["regression"]["baseline_run_id"] == report["run_id"]
+    assert regressed["regression"]["pass_rate_delta"] == -1.0
+    assert regressed["regression"]["gate_passed"] is False
