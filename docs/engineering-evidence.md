@@ -1,0 +1,52 @@
+# 工程证据与面试说明
+
+本文只记录能够由代码、自动化测试或可复现命令证明的能力。它用于代码审查、技术面试和简历撰写，不把规划中的适配器描述成已完成的生产系统。
+
+## 可验证能力
+
+| 工程能力 | 实现入口 | 验证证据 |
+|---|---|---|
+| 多 Provider Agent 与工具循环 | `plugins/agent_engine/engine.py`、`model_router.py`、`tool_dispatch.py` | `tests/test_agent/test_engine.py`、`tests/test_evals/test_fake_llm.py` |
+| 确定性离线 LLM 评测 | `plugins/evals/fake_llm.py`、`runner.py`、`metrics.py` | 无真实 API Key 即可验证流式响应、工具调用、Token 和工具准确率 |
+| 高风险工具审批 | `plugins/security/tool_approval.py`、`plugins/web_ui/api/tools.py` | `tests/test_tools/test_tool_dispatch.py` 覆盖允许、拒绝、过期和审计路径 |
+| 认证与生产启动基线 | `plugins/web_ui/api/auth.py`、`plugins/security/baseline.py` | `tests/test_security/test_auth.py`、`test_production_baseline.py` |
+| Web 抓取网络边界 | `plugins/security/network_policy.py`、`plugins/tool_market/builtin/web_search.py` | `tests/test_tools/test_web_extract.py` 覆盖私网、重定向和内容限制 |
+| 会话、记忆与 RAG 持久化 | `plugins/conversation/session_store.py`、`plugins/memory/long_term.py`、`plugins/rag_engine/` | 持久化、删除、隔离与重启测试位于 `tests/test_conversation/` 和 `tests/test_rag/` |
+| 多智能体恢复与取消 | `plugins/multi_agent/orchestrator.py` | `tests/test_multi_agent/test_orchestrator_persistence.py` |
+| 脱敏审计与链路标识 | `plugins/observability/audit.py`、`http_middleware.py` | `tests/test_observability/test_audit.py` 验证递归脱敏和 `trace_id` 传播 |
+| 全栈质量门禁 | `.github/workflows/test.yml` | Python 3.11/3.12、覆盖率、前端构建、依赖审查和 CodeQL |
+
+## 恢复语义
+
+- 会话、消息、Token 用量和缓存命中写入 SQLite，服务重启后可重新加载。
+- 多智能体计划采用原子文件写入；重启时将未完成的运行态任务恢复为可继续调度的等待态。
+- 取消针对实际后台任务，失败任务可以显式重试；配额和依赖阻塞在调度前检查。
+- 中断后的聊天重发复用客户端请求标识，避免重复保存用户消息。
+- 当前不承诺逐 Token 断点续传。具有外部副作用的工具仍需审批，并由工具协议提供幂等键或补偿策略。
+
+## 可复现验证
+
+```powershell
+# Python 回归与当前最低覆盖率门禁
+python -m pytest --cov-fail-under=35
+
+# Web 生产构建
+Set-Location web
+npm ci
+npm run build
+```
+
+2026-08-22 的本地基线为 94 项测试全部通过、总覆盖率 38.21%，Web 生产构建通过。该数字是当时的验证快照，不是永久性能承诺；合并结果应以 GitHub Actions 为准。
+
+## 关键取舍
+
+- 使用模块化单体作为组合根，保留 DI、事件总线和插件协议，避免在能力边界尚未稳定时引入分布式复杂度。
+- 使用 LiteLLM 统一模型入口，同时在引擎边界注入可脚本化假模型，使工具循环和用量统计能够离线回归。
+- 默认本地 SQLite 和内置检索降低启动成本；PostgreSQL、Milvus、Mem0 仅作为待集成能力，不宣称生产可用。
+- 审批、SSRF 防护、认证和脱敏审计位于工具与 API 边界，而不是依赖模型自行遵守提示词。
+
+## 简历表述参考
+
+> 设计并实现模块化 AI Agent 平台，支持多模型路由、流式工具调用、会话/记忆/RAG 持久化和多智能体任务恢复；构建可脚本化离线 LLM 评测，统计 Token、缓存及工具调用准确率；在 API 与工具边界落地认证、审批、SSRF 防护和脱敏审计，并通过 Python/React 全栈 CI、覆盖率门禁和 CodeQL 建立可复现质量基线。
+
+面试时应同时说明边界：这是本地优先的实验平台；多租户授权、托管密钥、外部数据库高可用、负载基准和故障演练仍属于后续生产化工作。

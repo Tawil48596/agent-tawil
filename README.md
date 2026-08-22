@@ -3,6 +3,7 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Version](https://img.shields.io/badge/version-1.0.0-6c8cff)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Quality](https://github.com/Tawil48596/agent-tawil/actions/workflows/test.yml/badge.svg)](https://github.com/Tawil48596/agent-tawil/actions/workflows/test.yml)
 
 一个面向本地开发和能力验证的 AI Agent 实验平台，提供 Web 对话、模型路由、工具调用、会话持久化、记忆、RAG、MCP 和多智能体编排等模块。
 
@@ -49,6 +50,12 @@
 - 知识库页面可查看和删除已持久化文档。
 
 完整记录见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 工程验证
+
+仓库提供确定性离线 LLM、工具循环和持久化回归，不需要真实模型密钥即可验证关键 Agent 路径。CI 对 Python 3.11/3.12、全量测试、35% 最低覆盖率、React 生产构建、依赖变更和 CodeQL 执行门禁。
+
+实现入口、恢复语义、验证命令、架构取舍和可用于简历的准确表述见 [工程证据与面试说明](docs/engineering-evidence.md)。生产边界仍以 [架构文档](docs/architecture.md) 为准。
 
 ## 快速开始
 
