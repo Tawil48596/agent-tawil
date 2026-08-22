@@ -255,7 +255,7 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
             enabled_tools = [
                 tool.to_dict()
                 for tool in registry.list_enabled()
-                if not tool.is_dangerous
+                if (not tool.is_dangerous or (requested_tools is not None and tool.name in requested_tools))
                 and (requested_tools is None or tool.name in requested_tools)
                 and registry.check_dependencies(tool)["available"]
             ]
@@ -263,6 +263,7 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
         try:
             async for event in engine.run_stream(
                 user_message=body.content,
+                session={"id": session_id, "source": "web"},
                 history=current_history,
                 enabled_tools=enabled_tools,
                 override_model=body.model,

@@ -23,7 +23,9 @@ class ToolDispatcher:
     def __init__(
         self,
         timeout: float = 30.0,
-        approval_handler: Callable[[str, dict[str, Any]], bool | Awaitable[bool]] | None = None,
+        approval_handler: Callable[
+            [str, dict[str, Any], dict[str, Any]], bool | Awaitable[bool]
+        ] | None = None,
     ):
         self._registry: dict[str, Any] = {}  # tool_name → handler
         self._approval_required: set[str] = set()
@@ -40,7 +42,9 @@ class ToolDispatcher:
 
     def set_approval_handler(
         self,
-        handler: Callable[[str, dict[str, Any]], bool | Awaitable[bool]] | None,
+        handler: Callable[
+            [str, dict[str, Any], dict[str, Any]], bool | Awaitable[bool]
+        ] | None,
     ) -> None:
         """Bind an application-owned approval decision provider."""
         self._approval_handler = handler
@@ -54,12 +58,14 @@ class ToolDispatcher:
         """列出已注册的工具名"""
         return list(self._registry.keys())
 
-    async def execute_parallel(self, tool_calls: list[dict]) -> list[dict]:
+    async def execute_parallel(
+        self, tool_calls: list[dict], *, context: dict[str, Any] | None = None
+    ) -> list[dict]:
         """并行执行一组工具调用 (假设它们之间无依赖)"""
         if not tool_calls:
             return []
 
-        tasks = [self._execute_one(tc) for tc in tool_calls]
+        tasks = [self._execute_one(tc, context=context) for tc in tool_calls]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         formatted = []
@@ -75,12 +81,14 @@ class ToolDispatcher:
                 formatted.append(result)
         return formatted
 
-    async def execute_sequential(self, tool_calls: list[dict]) -> list[dict]:
+    async def execute_sequential(
+        self, tool_calls: list[dict], *, context: dict[str, Any] | None = None
+    ) -> list[dict]:
         """串行执行工具调用 (有依赖关系时)"""
         results = []
         for tc in tool_calls:
             try:
-                result = await self._execute_one(tc)
+                result = await self._execute_one(tc, context=context)
                 results.append(result)
             except Exception as e:
                 results.append({
@@ -90,7 +98,9 @@ class ToolDispatcher:
                 })
         return results
 
-    async def _execute_one(self, tool_call: dict) -> dict:
+    async def _execute_one(
+        self, tool_call: dict, *, context: dict[str, Any] | None = None
+    ) -> dict:
         """执行单个工具调用"""
         func = tool_call.get("function", {})
         name = func.get("name", "")
@@ -130,7 +140,7 @@ class ToolDispatcher:
                     "error": True,
                     "code": "approval_required",
                 }
-            decision = self._approval_handler(name, args)
+            decision = self._approval_handler(name, args, context or {})
             approved = await decision if inspect.isawaitable(decision) else decision
             if approved is not True:
                 return {

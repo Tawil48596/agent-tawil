@@ -87,16 +87,18 @@ async def test_approval_required_tool_fails_closed_without_handler():
 async def test_external_approval_allows_dangerous_tool():
     decisions = []
 
-    async def approve(name, arguments):
+    async def approve(name, arguments, context):
         decisions.append((name, arguments))
+        assert context == {"id": "session-1"}
         return True
 
     dispatcher = ToolDispatcher(approval_handler=approve)
     dispatcher.register("dangerous", lambda value: value, requires_approval=True)
 
-    result = await dispatcher.execute_parallel([
-        _call("dangerous", json.dumps({"value": "approved"}))
-    ])
+    result = await dispatcher.execute_parallel(
+        [_call("dangerous", json.dumps({"value": "approved"}))],
+        context={"id": "session-1"},
+    )
 
     assert result[0]["error"] is False
     assert result[0]["output"] == "approved"
@@ -105,7 +107,9 @@ async def test_external_approval_allows_dangerous_tool():
 
 @pytest.mark.asyncio
 async def test_external_denial_blocks_dangerous_tool():
-    dispatcher = ToolDispatcher(approval_handler=lambda _name, _arguments: False)
+    dispatcher = ToolDispatcher(
+        approval_handler=lambda _name, _arguments, _context: False
+    )
     dispatcher.register("dangerous", lambda: "must not run", requires_approval=True)
 
     result = await dispatcher.execute_parallel([_call("dangerous", "{}")])

@@ -70,7 +70,7 @@ class AgentEngine:
         ))
 
         return await self._inference_loop(
-            messages, route_result, enabled_tools, reasoning_effort
+            messages, route_result, enabled_tools, reasoning_effort, session
         )
 
     # ── 流式运行 ──
@@ -184,7 +184,9 @@ class AgentEngine:
                     tool_calls_list = list(tool_calls_buffer.values())
                     yield {"type": "tool_calls", "calls": tool_calls_list, "status": "pending"}
 
-                    results = await self.tool_dispatcher.execute_parallel(tool_calls_list)
+                    results = await self.tool_dispatcher.execute_parallel(
+                        tool_calls_list, context=session
+                    )
                     yield {"type": "tool_results", "results": results}
                     assistant_message = {
                         "role": "assistant",
@@ -244,6 +246,7 @@ class AgentEngine:
         route_result: RouteResult,
         enabled_tools: Optional[list[dict]],
         reasoning_effort: Optional[str] = None,
+        session: Optional[dict] = None,
     ) -> EngineResponse:
         """非流式推理循环"""
         turns = 0
@@ -304,7 +307,9 @@ class AgentEngine:
                 }
                 for tc in choice.message.tool_calls
             ]
-            results = await self.tool_dispatcher.execute_parallel(tool_calls_raw)
+            results = await self.tool_dispatcher.execute_parallel(
+                tool_calls_raw, context=session
+            )
 
             assistant_message = {
                 "role": "assistant",

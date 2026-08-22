@@ -176,7 +176,19 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         app.state.content_filter = ContentFilter()
         app.state.execution_guard = ExecutionGuard(config.get("security", {}))
         app.state.output_guard = OutputGuard()
-        app.state.tool_approval = ToolApproval(config.get("security", {}))
+        tool_approval = ToolApproval(config.get("security", {}))
+        app.state.tool_approval = tool_approval
+
+        async def _request_tool_approval(name: str, arguments: dict, context: dict) -> bool:
+            approval = await tool_approval.request_approval(
+                session_id=str(context.get("id", "unknown")),
+                tool_name=name,
+                command=json.dumps(arguments, ensure_ascii=False, default=str),
+                reason="Model requested a protected tool",
+            )
+            return approval.status.value == "approved"
+
+        tool_dispatcher.set_approval_handler(_request_tool_approval)
 
         logger.info("Security: L1+L2+L3 filters ready")
 
@@ -660,6 +672,43 @@ def create_app(config: dict[str, Any]) -> FastAPI:
             "text": result.text[:500],  # 返回前 500 字符
             "redactions": result.redactions,
             "blocked": result.blocked,
+        }
+
+    @app.get("/api/v1/security/tool-approvals")
+    async def list_tool_approvals(session_id: str = ""):
+        """Return pending protected-tool requests for the approval UI."""
+        return {
+            "items": [
+                {
+                    "id": item.id,
+                    "session_id": item.session_id,
+                    "tool_name": item.tool_name,
+                    "command": item.command,
+                    "reason": item.reason,
+                    "status": item.status.value,
+                    "created_at": item.created_at,
+                    "timeout": item.timeout,
+                }
+                for item in app.state.tool_approval.get_pending(session_id)
+            ]
+        }
+
+    @app.post("/api/v1/security/tool-approvals/{request_id}")
+    async def decide_tool_approval(request_id: str, body: dict):
+        """Approve or deny one pending protected-tool request."""
+        decision = body.get("decision")
+        if decision not in {"approve", "deny"}:
+            raise HTTPException(422, "decision must be 'approve' or 'deny'")
+        handled = (
+            app.state.tool_approval.approve(request_id)
+            if decision == "approve"
+            else app.state.tool_approval.deny(request_id)
+        )
+        if not handled:
+            raise HTTPException(404, "Pending approval not found")
+        return {
+            "ok": True,
+            "status": "approved" if decision == "approve" else "denied",
         }
 
     # ── SPA fallback (MUST be the very last route) ──
