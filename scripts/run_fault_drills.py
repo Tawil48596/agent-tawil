@@ -15,7 +15,7 @@ DRILLS = [
 
 
 def main() -> int:
-    command = [sys.executable, "-m", "pytest", "-q", *DRILLS]
+    command = [sys.executable, "-m", "pytest", "-q", "--no-cov", *DRILLS]
     completed = subprocess.run(command, check=False)
     if completed.returncode:
         print("Fault drills failed")
