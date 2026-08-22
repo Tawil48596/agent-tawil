@@ -509,6 +509,11 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         lifespan=lifespan,
     )
 
+    if config.get("auth", {}).get("enabled", False):
+        from plugins.web_ui.api.auth import AuthenticationMiddleware
+
+        app.add_middleware(AuthenticationMiddleware)
+
     from plugins.observability.http_middleware import ObservabilityMiddleware
     from plugins.observability.metrics import MetricsCollector
     metrics_collector = MetricsCollector()
