@@ -1,6 +1,7 @@
 """服务降级与熔断器 — 三级降级 + 自动恢复"""
 
 import asyncio
+import inspect
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -98,7 +99,7 @@ class ResilienceManager:
         if circuit and circuit.state == CircuitState.OPEN:
             if fallback:
                 try:
-                    result = await fallback() if asyncio.iscoroutinefunction(fallback) else fallback()
+                    result = await fallback() if inspect.iscoroutinefunction(fallback) else fallback()
                     return DegradationResult(
                         level=degradation_level, degraded=True,
                         message=f"熔断中，已降级 ({circuit_name})",
@@ -112,7 +113,7 @@ class ResilienceManager:
 
         # 尝试主逻辑
         try:
-            result = await primary() if asyncio.iscoroutinefunction(primary) else primary()
+            result = await primary() if inspect.iscoroutinefunction(primary) else primary()
             if circuit:
                 circuit.success()
             return DegradationResult(level=DegradationLevel.NONE)
@@ -122,7 +123,7 @@ class ResilienceManager:
 
             if fallback:
                 try:
-                    result = await fallback() if asyncio.iscoroutinefunction(fallback) else fallback()
+                    result = await fallback() if inspect.iscoroutinefunction(fallback) else fallback()
                     return DegradationResult(
                         level=degradation_level, degraded=True,
                         original_error=str(e),
