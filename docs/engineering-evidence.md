@@ -13,6 +13,7 @@
 | Web 抓取网络边界 | `plugins/security/network_policy.py`、`plugins/tool_market/builtin/web_search.py` | `tests/test_tools/test_web_extract.py` 覆盖私网、重定向和内容限制 |
 | 会话、记忆与 RAG 持久化 | `plugins/conversation/session_store.py`、`plugins/memory/long_term.py`、`plugins/rag_engine/` | 持久化、删除、隔离与重启测试位于 `tests/test_conversation/` 和 `tests/test_rag/` |
 | 多智能体恢复与取消 | `plugins/multi_agent/orchestrator.py` | `tests/test_multi_agent/test_orchestrator_persistence.py` |
+| 幂等工具重试与检查点回退 | `plugins/checkpoint/execution_ledger.py`、`checkpoint_store.py` | `tests/test_tools/test_tool_dispatch.py`、`tests/test_checkpoint_store.py` |
 | 脱敏审计与链路标识 | `plugins/observability/audit.py`、`http_middleware.py` | `tests/test_observability/test_audit.py` 验证递归脱敏和 `trace_id` 传播 |
 | 全栈质量门禁 | `.github/workflows/test.yml` | Python 3.11/3.12、覆盖率、前端构建、依赖审查和 CodeQL |
 
@@ -22,7 +23,9 @@
 - 多智能体计划采用原子文件写入；重启时将未完成的运行态任务恢复为可继续调度的等待态。
 - 取消针对实际后台任务，失败任务可以显式重试；配额和依赖阻塞在调度前检查。
 - 中断后的聊天重发复用客户端请求标识，避免重复保存用户消息。
-- 当前不承诺逐 Token 断点续传。具有外部副作用的工具仍需审批，并由工具协议提供幂等键或补偿策略。
+- 成功的工具调用结果按会话、调用 ID、工具和参数摘要持久化；服务重启后重复请求不会再次产生副作用。失败、超时或参数变化仍会重新执行。
+- 检查点先写临时文件再原子替换；读取时跳过损坏快照并回退到最近的有效版本。
+- 当前不承诺逐 Token 断点续传或分布式 exactly-once。进程在工具执行成功但结果落盘前崩溃时结果仍不确定；跨进程并发写入仍需下游幂等键、条件写入或补偿策略。
 
 ## 可复现验证
 
@@ -47,6 +50,6 @@ npm run build
 
 ## 简历表述参考
 
-> 设计并实现模块化 AI Agent 平台，支持多模型路由、流式工具调用、会话/记忆/RAG 持久化和多智能体任务恢复；构建可脚本化离线 LLM 评测，统计 Token、缓存及工具调用准确率；在 API 与工具边界落地认证、审批、SSRF 防护和脱敏审计，并通过 Python/React 全栈 CI、覆盖率门禁和 CodeQL 建立可复现质量基线。
+> 设计并实现模块化 AI Agent 平台，支持多模型路由、流式工具调用、会话/记忆/RAG 持久化及多智能体任务恢复；以调用账本和原子检查点实现跨重启幂等重试与损坏快照回退；构建可脚本化离线 LLM 评测，统计 Token、缓存及工具调用准确率；在 API 与工具边界落地认证、审批、SSRF 防护和脱敏审计，并通过 Python/React 全栈 CI、覆盖率门禁和 CodeQL 建立可复现质量基线。
 
 面试时应同时说明边界：这是本地优先的实验平台；多租户授权、托管密钥、外部数据库高可用、负载基准和故障演练仍属于后续生产化工作。
