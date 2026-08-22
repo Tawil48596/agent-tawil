@@ -15,6 +15,7 @@
 | 会话、记忆与 RAG 持久化 | `plugins/conversation/session_store.py`、`plugins/memory/long_term.py`、`plugins/rag_engine/` | 持久化、删除、隔离与重启测试位于 `tests/test_conversation/` 和 `tests/test_rag/` |
 | 多智能体恢复与取消 | `plugins/multi_agent/orchestrator.py` | `tests/test_multi_agent/test_orchestrator_persistence.py` |
 | 幂等工具重试与检查点回退 | `plugins/checkpoint/execution_ledger.py`、`checkpoint_store.py` | `tests/test_tools/test_tool_dispatch.py`、`tests/test_checkpoint_store.py` |
+| 租约与不确定执行恢复 | `plugins/checkpoint/execution_ledger.py`、`plugins/web_ui/api/tools.py` | 活动租约、过期租约、参数冲突和异常后失败关闭测试 |
 | 脱敏审计与链路标识 | `plugins/observability/audit.py`、`http_middleware.py` | `tests/test_observability/test_audit.py` 验证递归脱敏和 `trace_id` 传播 |
 | 全栈质量门禁 | `.github/workflows/test.yml` | Python 3.11/3.12、覆盖率、前端构建、依赖审查和 CodeQL |
 

@@ -1,9 +1,12 @@
 import json
+from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 from plugins.agent_engine.tool_dispatch import ToolDispatcher
 from plugins.checkpoint.execution_ledger import ToolExecutionLedger
+from plugins.web_ui.api.tools import ExecutionResolveRequest, resolve_uncertain_execution
 
 
 def _call(name: str, arguments: str, call_id: str = "") -> dict:
@@ -239,3 +242,27 @@ async def test_handler_exception_becomes_uncertain(tmp_path):
 
     assert first[0]["error"] is True
     assert retry[0]["code"] == "tool_execution_uncertain"
+
+
+@pytest.mark.asyncio
+async def test_uncertain_resolution_requires_explicit_confirmation(tmp_path):
+    ledger = ToolExecutionLedger(tmp_path, lease_seconds=0)
+    ledger.acquire("session-1", "call-1", "write", {})
+    ledger.acquire("session-1", "call-1", "write", {})
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(execution_ledger=ledger))
+    )
+
+    with pytest.raises(HTTPException) as denied:
+        await resolve_uncertain_execution(
+            ExecutionResolveRequest(session_id="session-1", call_id="call-1"), request
+        )
+
+    assert denied.value.status_code == 400
+    resolved = await resolve_uncertain_execution(
+        ExecutionResolveRequest(
+            session_id="session-1", call_id="call-1", confirm_reconciled=True
+        ),
+        request,
+    )
+    assert resolved["ok"] is True

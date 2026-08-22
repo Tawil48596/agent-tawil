@@ -10,6 +10,12 @@ class ToolInstallRequest(BaseModel):
     name: str
 
 
+class ExecutionResolveRequest(BaseModel):
+    session_id: str
+    call_id: str
+    confirm_reconciled: bool = False
+
+
 # ── Tool Registry ──
 
 
@@ -98,3 +104,21 @@ async def tool_stats(request: Request):
         "marketplace": mp.get_stats(),
         "dangerous_tools": reg.get_dangerous_tools(),
     }
+
+
+@router.post("/executions/resolve")
+async def resolve_uncertain_execution(body: ExecutionResolveRequest, request: Request):
+    """Clear an uncertain call only after a human reconciles its external effect."""
+    if not body.confirm_reconciled:
+        raise HTTPException(400, "Explicit reconciliation confirmation is required")
+    ledger = request.app.state.execution_ledger
+    if not ledger.resolve_uncertain(body.session_id, body.call_id):
+        raise HTTPException(409, "Execution is not in an uncertain state")
+    audit = getattr(request.app.state, "audit_log", None)
+    if audit:
+        audit.record(
+            "tool.execution_resolved",
+            session_id=body.session_id,
+            call_id=body.call_id,
+        )
+    return {"ok": True, "session_id": body.session_id, "call_id": body.call_id}
