@@ -20,6 +20,7 @@
 | 脱敏审计与链路标识 | `plugins/observability/audit.py`、`http_middleware.py` | `tests/test_observability/test_audit.py` 验证递归脱敏和 `trace_id` 传播 |
 | 跨重启 Trace 摘要 | `plugins/evals/trace_viewer.py`、`plugins/web_ui/api/evals.py` | 持久化、错误过滤、延迟过滤和输入/输出不落盘测试 |
 | 全栈质量门禁 | `.github/workflows/test.yml` | Python 3.11/3.12、覆盖率、前端构建、依赖审查和 CodeQL |
+| 浏览器与故障演练 | `scripts/run_browser_smoke.py`、`run_fault_drills.py` | 本地真实浏览器已验证健康、首页和设置；CI 安装 Chromium 后重复执行 |
 
 ## 恢复语义
 
@@ -39,6 +40,10 @@ python -m pytest --cov-fail-under=35
 
 # 无 API Key、无网络的真实 Agent 工具循环与回归门禁
 python scripts/run_offline_eval.py
+
+# 服务启动后执行真实浏览器冒烟；故障演练无需外部服务
+python scripts/run_browser_smoke.py
+python scripts/run_fault_drills.py
 
 # Web 生产构建
 Set-Location web
