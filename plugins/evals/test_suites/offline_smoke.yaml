@@ -1,0 +1,10 @@
+name: offline_smoke
+description: 无网络、无真实 API Key 的 Agent 工具循环回归
+
+cases:
+  - id: offline_echo
+    difficulty: smoke
+    input: "Echo hello"
+    expected:
+      keywords: ["hello"]
+      tools: ["echo"]
