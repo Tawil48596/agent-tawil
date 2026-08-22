@@ -11,6 +11,7 @@ ROOT = Path(__file__).parents[2]
 def test_default_config_preserves_all_tool_market_settings():
     config = load_config(str(ROOT / "config.yaml"))
 
+    assert config["server"]["port"] == 8010
     assert config["tool_market"]["package_path"] == "data/tool_packages"
     assert config["tool_market"]["sandbox_mode"] == "subprocess"
     assert "browser" in config["tool_market"]["approval_required_for"]

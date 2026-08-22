@@ -4,7 +4,7 @@
 server:
   environment: "development"  # development | production
   host: "0.0.0.0"
-  port: 8000
+  port: 8010
   cors_origins:
     - "http://localhost:5173"
     - "http://localhost:3000"
