@@ -1,7 +1,6 @@
 """评测运行器 — CLI + API + CI 集成"""
 
 import json
-import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -12,6 +11,11 @@ import structlog
 import yaml
 
 from plugins.evals.metrics import MetricsCalculator
+from shared.versioned_store import (
+    UnsupportedSchemaVersion,
+    load_collection,
+    write_collection,
+)
 
 logger = structlog.get_logger()
 
@@ -44,27 +48,18 @@ class EvalRunner:
         if self._history_path is None or not self._history_path.exists():
             return []
         try:
-            payload = json.loads(self._history_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+            payload = load_collection(self._history_path)
+        except UnsupportedSchemaVersion:
+            raise
+        except (OSError, ValueError, json.JSONDecodeError):
             logger.warning("Ignoring corrupt eval history", path=str(self._history_path))
             return []
-        return payload[-self._history_limit:] if isinstance(payload, list) else []
+        return payload[-self._history_limit:]
 
     def _persist_history(self) -> None:
         if self._history_path is None:
             return
-        self._history_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self._history_path.with_name(
-            f".{self._history_path.name}.{uuid.uuid4().hex}.tmp"
-        )
-        try:
-            temporary.write_text(
-                json.dumps(self._history, ensure_ascii=False, default=str),
-                encoding="utf-8",
-            )
-            os.replace(temporary, self._history_path)
-        finally:
-            temporary.unlink(missing_ok=True)
+        write_collection(self._history_path, self._history)
 
     def load_suite(self, name: str) -> Optional[TestSuite]:
         """从 YAML 文件加载测试集"""

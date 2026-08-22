@@ -1,5 +1,8 @@
+import pytest
+
 from plugins.evals.trace_viewer import TraceCollector
 from plugins.observability.metrics import MetricsCollector
+from shared.versioned_store import UnsupportedSchemaVersion
 
 
 def test_tool_and_llm_metrics_contain_no_payload_data():
@@ -56,3 +59,12 @@ def test_trace_summary_survives_restart_without_payloads(tmp_path):
     persisted = path.read_text(encoding="utf-8")
     assert "secret" not in persisted
     assert "private" not in persisted
+    assert '"schema_version": 1' in persisted
+
+
+def test_trace_history_rejects_unknown_schema_version(tmp_path):
+    path = tmp_path / "history.json"
+    path.write_text('{"schema_version":99,"items":[]}', encoding="utf-8")
+
+    with pytest.raises(UnsupportedSchemaVersion):
+        TraceCollector(storage_path=str(path))

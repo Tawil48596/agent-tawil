@@ -1,7 +1,5 @@
 """Trace Viewer — 调用链可视化 + 慢动作回放"""
 
-import json
-import os
 import time
 import uuid
 from collections import defaultdict
@@ -11,6 +9,11 @@ from pathlib import Path
 from typing import Any, Optional
 
 import structlog
+from shared.versioned_store import (
+    UnsupportedSchemaVersion,
+    load_collection,
+    write_collection,
+)
 
 logger = structlog.get_logger()
 
@@ -73,27 +76,20 @@ class TraceCollector:
         if self._storage_path is None or not self._storage_path.exists():
             return
         try:
-            payload = json.loads(self._storage_path.read_text(encoding="utf-8"))
+            payload = load_collection(self._storage_path)
             traces = [self._from_dict(item) for item in payload if isinstance(item, dict)]
             self._traces = {trace.trace_id: trace for trace in traces[-self._max_traces:]}
-        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        except UnsupportedSchemaVersion:
+            raise
+        except (OSError, TypeError, ValueError):
             logger.warning("Ignoring corrupt trace history", path=str(self._storage_path))
 
     def _persist(self) -> None:
         if self._storage_path is None:
             return
-        self._storage_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self._storage_path.with_name(
-            f".{self._storage_path.name}.{uuid.uuid4().hex}.tmp"
+        write_collection(
+            self._storage_path, [trace.to_dict() for trace in self._traces.values()]
         )
-        try:
-            temporary.write_text(
-                json.dumps([trace.to_dict() for trace in self._traces.values()]),
-                encoding="utf-8",
-            )
-            os.replace(temporary, self._storage_path)
-        finally:
-            temporary.unlink(missing_ok=True)
 
     def start_trace(self, name: str = "agent_run", trace_type: str = "workflow",
                     trace_id: str | None = None) -> TraceSpan:

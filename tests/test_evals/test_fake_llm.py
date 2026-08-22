@@ -1,8 +1,13 @@
+import json
+
+import pytest
+
 from plugins.agent_engine.engine import AgentEngine
 from plugins.agent_engine.model_router import ModelRouter
 from plugins.agent_engine.tool_dispatch import ToolDispatcher
 from plugins.evals.fake_llm import ScriptedLLM, ScriptedResponse
 from plugins.evals.runner import EvalRunner
+from shared.versioned_store import UnsupportedSchemaVersion, load_collection
 
 
 def _router() -> ModelRouter:
@@ -111,6 +116,7 @@ cases:
     assert regressed["regression"]["baseline_run_id"] == report["run_id"]
     assert regressed["regression"]["pass_rate_delta"] == -1.0
     assert regressed["regression"]["gate_passed"] is False
+    assert json.loads(history_path.read_text(encoding="utf-8"))["schema_version"] == 1
 
 
 async def test_eval_budget_failure_is_reported_without_output_payload(tmp_path):
@@ -133,3 +139,18 @@ cases:
     assert report["pass_rate"] == 0.0
     assert report["metrics"]["budget_failures"] == 1
     assert "text" not in report["results"][0]
+
+
+def test_eval_history_rejects_unknown_schema_version(tmp_path):
+    path = tmp_path / "history.json"
+    path.write_text('{"schema_version":99,"items":[]}', encoding="utf-8")
+
+    with pytest.raises(UnsupportedSchemaVersion):
+        EvalRunner(str(tmp_path), history_path=str(path))
+
+
+def test_versioned_store_reads_legacy_list(tmp_path):
+    path = tmp_path / "legacy.json"
+    path.write_text('[{"id":"old"},null]', encoding="utf-8")
+
+    assert load_collection(path) == [{"id": "old"}]
