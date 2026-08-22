@@ -10,6 +10,8 @@ from typing import Any, Callable, Optional
 import structlog
 import yaml
 
+from plugins.evals.metrics import MetricsCalculator
+
 logger = structlog.get_logger()
 
 
@@ -66,11 +68,21 @@ class EvalRunner:
 
                 # 简单断言
                 expected = case_data.get("expected", {})
-                text = output if isinstance(output, str) else str(output)
+                structured = output if isinstance(output, dict) else {"text": str(output)}
+                text = str(structured.get("text", ""))
+                actual_tools = list(structured.get("tools", []))
+                usage = structured.get("usage", {}) or {}
 
                 kw = expected.get("keywords", [])
                 kw_matched = [k for k in kw if k.lower() in text.lower()]
-                passed = len(kw_matched) >= len(kw) * 0.5 if kw else True
+                keyword_score = len(kw_matched) / len(kw) if kw else 1.0
+                expected_tools = list(expected.get("tools", []))
+                tool_accuracy = (
+                    len(set(actual_tools) & set(expected_tools))
+                    / len(set(actual_tools) | set(expected_tools))
+                    if actual_tools or expected_tools else 1.0
+                )
+                passed = keyword_score >= 0.5 and tool_accuracy == 1.0
 
                 results.append({
                     "case": case_data.get("id", ""),
@@ -78,6 +90,11 @@ class EvalRunner:
                     "latency_ms": round(case_time * 1000),
                     "keywords_matched": kw_matched,
                     "keywords_expected": kw,
+                    "tools_actual": actual_tools,
+                    "tools_expected": expected_tools,
+                    "tool_accuracy": round(tool_accuracy, 3),
+                    "score": round((keyword_score + tool_accuracy) / 2, 3),
+                    "total_tokens": int(usage.get("total_tokens", 0) or 0),
                 })
             except Exception as e:
                 results.append({
@@ -96,6 +113,7 @@ class EvalRunner:
             "elapsed_s": round(elapsed, 1),
             "results": results,
         }
+        report["metrics"] = MetricsCalculator().calculate(results).to_dict()
 
         self._history.append(report)
         logger.info("Eval complete", suite=suite_name, pass_rate=report["pass_rate"])

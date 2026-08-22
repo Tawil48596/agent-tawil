@@ -19,9 +19,16 @@ async def run_suite(name: str, request: Request):
     runner = request.app.state.eval_runner
     engine = request.app.state.agent_engine
 
-    async def agent_fn(input_text: str) -> str:
+    async def agent_fn(input_text: str) -> dict:
         resp = await engine.run(user_message=input_text)
-        return resp.text
+        return {
+            "text": resp.text,
+            "tools": [
+                call.get("function", {}).get("name", "")
+                for call in resp.tool_calls
+            ],
+            "usage": resp.usage,
+        }
 
     report = await runner.run(name, agent_fn)
     return report

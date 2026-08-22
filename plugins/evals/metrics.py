@@ -38,13 +38,18 @@ class MetricsCalculator:
     """评测指标计算器"""
 
     def calculate(self, results: list[dict]) -> MetricsReport:
-        if not results: return MetricsReport()
+        if not results:
+            return MetricsReport()
         total = len(results)
         passed = sum(1 for r in results if r.get("passed", False))
         scores = [r.get("score", 0) for r in results if "score" in r]
+        tool_scores = [r["tool_accuracy"] for r in results if "tool_accuracy" in r]
+        tokens = [int(r.get("total_tokens", 0) or 0) for r in results]
         return MetricsReport(
             total=total, passed=passed,
             pass_rate=passed / total if total else 0,
             avg_score=sum(scores) / len(scores) if scores else 0,
+            tool_accuracy=sum(tool_scores) / len(tool_scores) if tool_scores else 0,
             avg_latency_ms=sum(r.get("latency_ms", 0) for r in results) / total,
+            avg_tokens=round(sum(tokens) / total),
         )

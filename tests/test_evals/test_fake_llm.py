@@ -2,6 +2,7 @@ from plugins.agent_engine.engine import AgentEngine
 from plugins.agent_engine.model_router import ModelRouter
 from plugins.agent_engine.tool_dispatch import ToolDispatcher
 from plugins.evals.fake_llm import ScriptedLLM, ScriptedResponse
+from plugins.evals.runner import EvalRunner
 
 
 def _router() -> ModelRouter:
@@ -38,6 +39,7 @@ async def test_scripted_llm_runs_agent_tool_loop_without_network():
 
     assert result.text == "Tool returned hello"
     assert result.usage["total_tokens"] == 8
+    assert result.tool_calls[0]["function"]["name"] == "echo"
     assert len(fake.requests) == 2
     assert fake.requests[1]["messages"][-1] == {
         "role": "tool",
@@ -62,3 +64,31 @@ async def test_scripted_llm_supports_streaming_usage():
     assert events[0] == {"type": "text", "content": "offline stream"}
     assert events[-1]["type"] == "done"
     assert events[-1]["usage"]["total_tokens"] == 6
+
+
+async def test_eval_runner_scores_tools_tokens_and_text(tmp_path):
+    (tmp_path / "offline.yaml").write_text(
+        """name: offline
+cases:
+  - id: uses_echo
+    input: echo hello
+    expected:
+      keywords: [hello]
+      tools: [echo]
+""",
+        encoding="utf-8",
+    )
+    runner = EvalRunner(str(tmp_path))
+
+    async def agent_fn(_text: str) -> dict:
+        return {
+            "text": "hello",
+            "tools": ["echo"],
+            "usage": {"total_tokens": 12},
+        }
+
+    report = await runner.run("offline", agent_fn)
+
+    assert report["pass_rate"] == 1.0
+    assert report["metrics"]["tool_accuracy"] == 1.0
+    assert report["metrics"]["avg_tokens"] == 12

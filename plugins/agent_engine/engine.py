@@ -254,6 +254,7 @@ class AgentEngine:
         turns = 0
         consecutive_failures = 0
         failed_providers: set[str] = set()
+        executed_tool_calls: list[dict[str, Any]] = []
 
         while turns < self.max_turns:
             if self.context_manager.needs_compression(messages, route_result.context_length):
@@ -284,6 +285,7 @@ class AgentEngine:
                         stop_reason="tool_error",
                         model_used=route_result.model,
                         provider_used=route_result.provider,
+                        tool_calls=executed_tool_calls,
                     )
                 continue
 
@@ -298,6 +300,7 @@ class AgentEngine:
                     model_used=route_result.model,
                     provider_used=route_result.provider,
                     usage=usage,
+                    tool_calls=executed_tool_calls,
                 )
 
             # 工具调用
@@ -309,6 +312,7 @@ class AgentEngine:
                 }
                 for tc in choice.message.tool_calls
             ]
+            executed_tool_calls.extend(tool_calls_raw)
             results = await self.tool_dispatcher.execute_parallel(
                 tool_calls_raw, context=session
             )
@@ -337,6 +341,7 @@ class AgentEngine:
                         stop_reason="tool_error",
                         model_used=route_result.model,
                         provider_used=route_result.provider,
+                        tool_calls=executed_tool_calls,
                     )
             else:
                 consecutive_failures = 0
@@ -348,6 +353,7 @@ class AgentEngine:
             stop_reason="max_turns",
             model_used=route_result.model,
             provider_used=route_result.provider,
+            tool_calls=executed_tool_calls,
         )
 
     async def _build_initial_messages(
