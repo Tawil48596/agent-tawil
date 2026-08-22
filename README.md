@@ -1,7 +1,7 @@
 # AI Agent Platform
 
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-1.0.0-6c8cff)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.3.0-6c8cff)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Quality](https://github.com/Tawil48596/agent-tawil/actions/workflows/test.yml/badge.svg)](https://github.com/Tawil48596/agent-tawil/actions/workflows/test.yml)
 
@@ -24,6 +24,14 @@
 | Telegram / Slack / Discord | 可用（需配置） | 统一 Webhook、签名鉴权、允许列表、去重和会话映射 |
 | PostgreSQL / Milvus / Mem0 | 规划中 | 配置或接口已预留，尚未形成可验证的生产实现 |
 | 运行时插件化 | 可用（基础） | DI、事件总线、依赖排序、生命周期、故障状态和健康快照 |
+| 可靠执行与评测 | 可用（本地） | 工具幂等重放、原子检查点、损坏回退、持久评测基线和回归门禁 |
+
+## v1.3.0 更新
+
+- 1.2：成功工具调用可跨重启幂等重放，检查点支持原子写入和损坏快照回退。
+- 1.3：评测历史持久化，按同一测试集输出回归差值和可用于 CI 的门禁结果。
+- Token、缓存、工具执行/重放和 HTTP Trace 形成关联指标，不保存提示词、模型输出或工具参数。
+- `python scripts/run_offline_eval.py` 可在没有 API Key 和网络的环境中验证真实 Agent 工具循环。
 
 ## v1.0.0 更新
 
