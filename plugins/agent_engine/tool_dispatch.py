@@ -1,7 +1,9 @@
 """工具调度器 — 工具调用解析与并行分发"""
 
 import asyncio
+import inspect
 import json
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import structlog
@@ -18,17 +20,35 @@ class ToolDispatcher:
     - 执行超时保护
     """
 
-    def __init__(self, timeout: float = 30.0):
+    def __init__(
+        self,
+        timeout: float = 30.0,
+        approval_handler: Callable[[str, dict[str, Any]], bool | Awaitable[bool]] | None = None,
+    ):
         self._registry: dict[str, Any] = {}  # tool_name → handler
+        self._approval_required: set[str] = set()
+        self._approval_handler = approval_handler
         self._timeout = timeout
 
-    def register(self, name: str, handler: Any):
+    def register(self, name: str, handler: Any, *, requires_approval: bool = False):
         """注册工具处理器"""
         self._registry[name] = handler
+        if requires_approval:
+            self._approval_required.add(name)
+        else:
+            self._approval_required.discard(name)
+
+    def set_approval_handler(
+        self,
+        handler: Callable[[str, dict[str, Any]], bool | Awaitable[bool]] | None,
+    ) -> None:
+        """Bind an application-owned approval decision provider."""
+        self._approval_handler = handler
 
     def unregister(self, name: str):
         """注销工具"""
         self._registry.pop(name, None)
+        self._approval_required.discard(name)
 
     def list_tools(self) -> list[str]:
         """列出已注册的工具名"""
@@ -101,6 +121,24 @@ class ToolDispatcher:
                 "output": f"错误: 工具 '{name}' 未注册。可用工具: {list(self._registry.keys())}",
                 "error": True,
             }
+
+        if name in self._approval_required:
+            if self._approval_handler is None:
+                return {
+                    "name": name,
+                    "output": f"错误: 工具 '{name}' 需要外部审批",
+                    "error": True,
+                    "code": "approval_required",
+                }
+            decision = self._approval_handler(name, args)
+            approved = await decision if inspect.isawaitable(decision) else decision
+            if approved is not True:
+                return {
+                    "name": name,
+                    "output": f"错误: 工具 '{name}' 的审批被拒绝",
+                    "error": True,
+                    "code": "approval_denied",
+                }
 
         try:
             output = await asyncio.wait_for(

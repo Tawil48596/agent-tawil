@@ -64,3 +64,62 @@ async def test_non_object_arguments_are_rejected():
 
     assert result[0]["error"] is True
     assert "JSON 对象" in result[0]["output"]
+
+
+@pytest.mark.asyncio
+async def test_approval_required_tool_fails_closed_without_handler():
+    dispatcher = ToolDispatcher()
+    called = False
+
+    async def handler():
+        nonlocal called
+        called = True
+        return "ok"
+
+    dispatcher.register("dangerous", handler, requires_approval=True)
+    result = await dispatcher.execute_parallel([_call("dangerous", "{}")])
+
+    assert result[0]["code"] == "approval_required"
+    assert called is False
+
+
+@pytest.mark.asyncio
+async def test_external_approval_allows_dangerous_tool():
+    decisions = []
+
+    async def approve(name, arguments):
+        decisions.append((name, arguments))
+        return True
+
+    dispatcher = ToolDispatcher(approval_handler=approve)
+    dispatcher.register("dangerous", lambda value: value, requires_approval=True)
+
+    result = await dispatcher.execute_parallel([
+        _call("dangerous", json.dumps({"value": "approved"}))
+    ])
+
+    assert result[0]["error"] is False
+    assert result[0]["output"] == "approved"
+    assert decisions == [("dangerous", {"value": "approved"})]
+
+
+@pytest.mark.asyncio
+async def test_external_denial_blocks_dangerous_tool():
+    dispatcher = ToolDispatcher(approval_handler=lambda _name, _arguments: False)
+    dispatcher.register("dangerous", lambda: "must not run", requires_approval=True)
+
+    result = await dispatcher.execute_parallel([_call("dangerous", "{}")])
+
+    assert result[0]["code"] == "approval_denied"
+
+
+@pytest.mark.asyncio
+async def test_model_arguments_cannot_self_approve_tool_call():
+    dispatcher = ToolDispatcher()
+    dispatcher.register("dangerous", lambda approved=False: approved, requires_approval=True)
+
+    result = await dispatcher.execute_parallel([
+        _call("dangerous", json.dumps({"approved": True}))
+    ])
+
+    assert result[0]["code"] == "approval_required"

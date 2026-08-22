@@ -23,9 +23,32 @@ import uvicorn
 import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from yaml.resolver import BaseResolver
 from shared.version import APP_VERSION
 
 # ── Config loading ──
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects silently overwritten mapping keys."""
+
+
+def _construct_unique_mapping(loader: _UniqueKeyLoader, node: yaml.MappingNode, deep=False):
+    mapping = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping",
+                node.start_mark,
+                f"duplicate key: {key}",
+                key_node.start_mark,
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping)
 
 
 def load_config(config_path: str = "config.yaml") -> dict[str, Any]:
@@ -45,7 +68,7 @@ def load_config(config_path: str = "config.yaml") -> dict[str, Any]:
         return os.environ.get(var_name, match.group(0))
 
     raw = re.sub(r"\$\{(\w+)\}", _env_replacer, raw)
-    return yaml.safe_load(raw) or {}
+    return yaml.load(raw, Loader=_UniqueKeyLoader) or {}
 
 
 # ── Logging setup ──
@@ -363,9 +386,16 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         ))
 
         # 同步 tool_dispatcher
+        approval_required = set(
+            config.get("tool_market", {}).get("approval_required_for", [])
+        )
         for tool in tool_registry.list_installed():
             if tool.handler:
-                tool_dispatcher.register(tool.name, tool.handler)
+                tool_dispatcher.register(
+                    tool.name,
+                    tool.handler,
+                    requires_approval=(tool.is_dangerous or tool.name in approval_required),
+                )
 
         logger.info("Tool market ready", builtin=len(tool_registry.list_installed()),
                      market=marketplace.get_stats()["market_size"])

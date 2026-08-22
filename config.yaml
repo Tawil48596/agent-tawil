@@ -81,6 +81,7 @@ rag:
   hybrid_alpha: 0.7
 
 tool_market:
+  package_path: "data/tool_packages"
   sandbox_mode: "subprocess"
   approval_required_for:
     - "terminal"
@@ -100,9 +101,6 @@ multi_agent:
   max_workers: 5
   max_tasks_per_plan: 20
   storage_path: "data/orchestration/plans.json"
-
-tool_market:
-  package_path: "data/tool_packages"
 
 messaging:
   state_path: "data/messaging/sessions.json"
