@@ -18,6 +18,7 @@
 | 幂等工具重试与检查点回退 | `plugins/checkpoint/execution_ledger.py`、`checkpoint_store.py` | `tests/test_tools/test_tool_dispatch.py`、`tests/test_checkpoint_store.py` |
 | 租约与不确定执行恢复 | `plugins/checkpoint/execution_ledger.py`、`plugins/web_ui/api/tools.py` | 活动租约、过期租约、参数冲突和异常后失败关闭测试 |
 | 脱敏审计与链路标识 | `plugins/observability/audit.py`、`http_middleware.py` | `tests/test_observability/test_audit.py` 验证递归脱敏和 `trace_id` 传播 |
+| 跨重启 Trace 摘要 | `plugins/evals/trace_viewer.py`、`plugins/web_ui/api/evals.py` | 持久化、错误过滤、延迟过滤和输入/输出不落盘测试 |
 | 全栈质量门禁 | `.github/workflows/test.yml` | Python 3.11/3.12、覆盖率、前端构建、依赖审查和 CodeQL |
 
 ## 恢复语义
