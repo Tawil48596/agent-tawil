@@ -1,5 +1,6 @@
 """MCP Server — 暴露 Agent 能力给外部 MCP Client"""
 
+import inspect
 import json
 from typing import Any, Callable
 
@@ -75,7 +76,7 @@ class MCPServer:
 
         try:
             import asyncio
-            if asyncio.iscoroutinefunction(handler):
+            if inspect.iscoroutinefunction(handler):
                 result = await handler(**arguments)
             else:
                 result = handler(**arguments)

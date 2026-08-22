@@ -1,6 +1,7 @@
 """健康检查器"""
 
 import asyncio
+import inspect
 from typing import Any, Callable
 
 
@@ -15,7 +16,7 @@ class HealthChecker:
         for name, fn in self._checks.items():
             try:
                 import asyncio
-                if asyncio.iscoroutinefunction(fn):
+                if inspect.iscoroutinefunction(fn):
                     ok = await fn()
                 else:
                     ok = fn()

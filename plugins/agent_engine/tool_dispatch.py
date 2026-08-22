@@ -173,7 +173,7 @@ class ToolDispatcher:
         self._audit("tool.started", tool=name, arguments=args, context=context or {})
         try:
             output = await asyncio.wait_for(
-                handler(**args) if asyncio.iscoroutinefunction(handler) else _run_sync(handler, **args),
+                handler(**args) if inspect.iscoroutinefunction(handler) else _run_sync(handler, **args),
                 timeout=self._timeout,
             )
             if isinstance(output, str):

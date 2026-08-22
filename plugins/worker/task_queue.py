@@ -1,6 +1,7 @@
 """任务队列与 Worker Pool — FastAPI 无状态 + 重计算解耦"""
 
 import asyncio
+import inspect
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
@@ -86,7 +87,7 @@ class TaskQueue:
                 handler = self._handlers.get(task.name)
                 if handler:
                     try:
-                        if asyncio.iscoroutinefunction(handler):
+                        if inspect.iscoroutinefunction(handler):
                             task.result = await handler(**task.payload)
                         else:
                             task.result = await asyncio.to_thread(handler, **task.payload)
