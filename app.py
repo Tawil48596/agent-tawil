@@ -21,7 +21,7 @@ from typing import Any
 import structlog
 import uvicorn
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from yaml.resolver import BaseResolver
 from shared.version import APP_VERSION
