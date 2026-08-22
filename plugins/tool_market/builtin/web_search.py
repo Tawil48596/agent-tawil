@@ -2,9 +2,11 @@
 
 import json
 import re
-from urllib.parse import urlparse
+from urllib.parse import urljoin
 
 import structlog
+
+from plugins.security.network_policy import require_public_http_url, validate_http_url
 
 logger = structlog.get_logger()
 
@@ -74,11 +76,7 @@ _JS_SHELL_MARKERS = (
 
 
 def _validate_web_url(url: str) -> str:
-    normalized = url.strip()
-    parsed = urlparse(normalized)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError("url must be a valid HTTP(S) URL")
-    return normalized
+    return validate_http_url(url)
 
 
 def _normalize_text(text: str) -> str:
@@ -124,8 +122,19 @@ def _extract_html(html: str, url: str, max_chars: int) -> dict:
 async def _fetch_static(url: str, max_chars: int) -> dict:
     import httpx
 
-    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-        response = await client.get(url, headers=_REQUEST_HEADERS)
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+        current_url = url
+        for _ in range(6):
+            await require_public_http_url(current_url)
+            response = await client.get(current_url, headers=_REQUEST_HEADERS)
+            if not response.is_redirect:
+                break
+            location = response.headers.get("location")
+            if not location:
+                raise ValueError("redirect response is missing a location")
+            current_url = urljoin(str(response.url), location)
+        else:
+            raise ValueError("too many redirects")
         response.raise_for_status()
         content_type = response.headers.get("content-type", "").lower()
         if "html" in content_type or not content_type:
@@ -156,9 +165,9 @@ def _needs_browser(result: dict) -> bool:
 async def web_extract(url: str, render_js: bool = False, max_chars: int = 20000) -> str:
     """提取网页正文；静态内容不足时自动使用浏览器渲染。"""
     try:
-        url = _validate_web_url(url)
+        url = await require_public_http_url(url)
         max_chars = max(1000, min(int(max_chars), 50000))
-    except (TypeError, ValueError) as error:
+    except (OSError, TypeError, ValueError) as error:
         return json.dumps({"error": str(error), "url": url}, ensure_ascii=False)
 
     static_result = None

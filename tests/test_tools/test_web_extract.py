@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from plugins.tool_market.builtin import browser
-from plugins.tool_market.builtin import web_search
+from plugins.security import network_policy
+from plugins.tool_market.builtin import browser, web_search
 
 
 def test_extract_html_prefers_visible_content_and_removes_navigation():
@@ -36,6 +36,9 @@ def test_extract_html_reports_truncation():
 
 @pytest.mark.asyncio
 async def test_web_extract_uses_browser_for_javascript_shell(monkeypatch):
+    async def public_url(url):
+        return url
+
     async def static_result(url, max_chars):
         return {
             "url": url,
@@ -57,6 +60,7 @@ async def test_web_extract_uses_browser_for_javascript_shell(monkeypatch):
         }
 
     monkeypatch.setattr(web_search, "_fetch_static", static_result)
+    monkeypatch.setattr(web_search, "require_public_http_url", public_url)
     monkeypatch.setattr(
         "plugins.tool_market.builtin.browser.extract_rendered_page",
         rendered_result,
@@ -74,6 +78,38 @@ async def test_web_extract_rejects_non_http_urls():
 
     assert "error" in result
     assert "HTTP(S)" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_web_extract_rejects_loopback_before_browser_fallback(monkeypatch):
+    browser_called = False
+
+    async def rendered_result(url, max_chars=20000):
+        nonlocal browser_called
+        browser_called = True
+        return {"url": url, "content": "should not run"}
+
+    monkeypatch.setattr(
+        "plugins.tool_market.builtin.browser.extract_rendered_page",
+        rendered_result,
+    )
+
+    result = json.loads(await web_search.web_extract("http://127.0.0.1:8010"))
+
+    assert "non-public address" in result["error"]
+    assert browser_called is False
+
+
+@pytest.mark.asyncio
+async def test_dns_resolution_to_private_address_is_rejected(monkeypatch):
+    monkeypatch.setattr(
+        network_policy,
+        "_resolved_addresses",
+        lambda _hostname, _port: {"169.254.169.254"},
+    )
+
+    with pytest.raises(ValueError, match="non-public address"):
+        await network_policy.require_public_http_url("http://metadata.example/latest")
 
 
 @pytest.mark.asyncio
