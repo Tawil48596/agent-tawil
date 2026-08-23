@@ -78,7 +78,7 @@ class APIKeyManager:
         self._revoked.add(self._hash(raw_key))
 
     def _hash(self, key: str) -> str:
-        return hmac.new(self._hash_key, key.encode(), hashlib.sha256).hexdigest()
+        return hmac.digest(self._hash_key, key.encode(), "sha256").hex()
 
 
 # ── JWT ──
