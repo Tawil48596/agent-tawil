@@ -21,7 +21,7 @@ dependencies = [
     "tiktoken>=0.7.0",
 
     # Database
-    "sqlalchemy[asyncio]>=2.0.30",
+    "sqlalchemy[asyncio]>=2.0.52",
     "aiosqlite>=0.20.0",
 
     # Cache & Queue
