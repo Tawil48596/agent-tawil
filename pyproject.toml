@@ -25,7 +25,7 @@ dependencies = [
     "aiosqlite>=0.20.0",
 
     # Cache & Queue
-    "redis[hiredis]>=5.0.0",
+    "redis[hiredis]>=8.1.0",
 
     # RAG
     "rank-bm25>=0.2.2",
