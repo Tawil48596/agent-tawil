@@ -1,7 +1,5 @@
 """结果聚合器 — 汇总子代理输出"""
 
-from typing import Any
-
 
 class ResultAggregator:
     """子代理结果聚合器"""
@@ -36,12 +34,17 @@ class ResultAggregator:
 
         try:
             from litellm import acompletion
+
             from plugins.agent_engine.model_router import RouteRequest, TaskType
+
             route = self._router.route(RouteRequest(task_type=TaskType.SUMMARIZATION))
             response = await acompletion(
                 model=f"{route.provider}/{route.model}",
-                messages=[{"role": "user", "content": f"总结以下多智能体协作结果:\n\n{combined[:5000]}"}],
-                api_key=route.api_key, api_base=route.base_url if route.base_url else None,
+                messages=[
+                    {"role": "user", "content": f"总结以下多智能体协作结果:\n\n{combined[:5000]}"}
+                ],
+                api_key=route.api_key,
+                api_base=route.base_url if route.base_url else None,
                 max_tokens=500,
             )
             return response.choices[0].message.content or combined[:1000]
@@ -53,4 +56,9 @@ class ResultAggregator:
         total = len(results)
         completed = sum(1 for r in results if r.get("status") == "completed")
         failed = sum(1 for r in results if r.get("status") == "failed")
-        return {"total": total, "completed": completed, "failed": failed, "success_rate": completed / max(total, 1)}
+        return {
+            "total": total,
+            "completed": completed,
+            "failed": failed,
+            "success_rate": completed / max(total, 1),
+        }

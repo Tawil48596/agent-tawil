@@ -1,11 +1,10 @@
 """工具市场 — 浏览/搜索/安装/卸载 + 社区源"""
 
-from dataclasses import dataclass, field
-from typing import Any, Optional
+from dataclasses import dataclass
 
 import structlog
 
-from plugins.tool_market.registry import ToolRegistry, ToolDef
+from plugins.tool_market.registry import ToolDef, ToolRegistry
 
 logger = structlog.get_logger()
 
@@ -13,6 +12,7 @@ logger = structlog.get_logger()
 @dataclass
 class MarketplaceEntry:
     """市场中的工具条目"""
+
     name: str
     description: str
     version: str
@@ -43,19 +43,22 @@ class Marketplace:
 
     # ── 浏览/搜索 ──
 
-    def browse(self, query: str = "", tag: str = "", sort_by: str = "downloads",
-                limit: int = 20) -> list[MarketplaceEntry]:
+    def browse(
+        self, query: str = "", tag: str = "", sort_by: str = "downloads", limit: int = 20
+    ) -> list[MarketplaceEntry]:
         results = list(self._market.values())
 
         if query:
             q = query.lower()
-            results = [e for e in results
-                        if q in e.name.lower() or q in e.description.lower()]
+            results = [e for e in results if q in e.name.lower() or q in e.description.lower()]
         if tag:
             results = [e for e in results if tag in e.tags]
 
-        sort_key = {"downloads": lambda e: e.downloads, "rating": lambda e: e.rating,
-                      "name": lambda e: e.name}
+        sort_key = {
+            "downloads": lambda e: e.downloads,
+            "rating": lambda e: e.rating,
+            "name": lambda e: e.name,
+        }
         results.sort(key=sort_key.get(sort_by, lambda e: e.downloads), reverse=True)
 
         return results[:limit]
@@ -111,8 +114,7 @@ class Marketplace:
         if not entry:
             return {"error": f"Tool '{name}' not in marketplace"}
         if entry.version <= current:
-            return {"ok": True, "name": name, "message": "Already up to date",
-                     "version": current}
+            return {"ok": True, "name": name, "message": "Already up to date", "version": current}
 
         await self.uninstall(name)
         return await self.install(name)

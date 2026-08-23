@@ -17,23 +17,32 @@ class DependencyCheck:
 class DependencyResolver:
     """依赖解析器"""
 
-    def check(self, requires_env: list[str] = None,
-              requires_packages: list[str] = None,
-              requires_system: list[str] = None) -> DependencyCheck:
+    def check(
+        self,
+        requires_env: list[str] = None,
+        requires_packages: list[str] = None,
+        requires_system: list[str] = None,
+    ) -> DependencyCheck:
         result = DependencyCheck()
 
-        for var in (requires_env or []):
-            if var not in os.environ: result.missing_env.append(var)
+        for var in requires_env or []:
+            if var not in os.environ:
+                result.missing_env.append(var)
 
-        for pkg in (requires_packages or []):
+        for pkg in requires_packages or []:
             pkg_name = pkg.split(">=")[0].split("[")[0].strip()
-            try: importlib.import_module(pkg_name)
-            except ImportError: result.missing_packages.append(pkg)
+            try:
+                importlib.import_module(pkg_name)
+            except ImportError:
+                result.missing_packages.append(pkg)
 
-        for cmd in (requires_system or []):
-            if not shutil.which(cmd): result.missing_system.append(cmd)
+        for cmd in requires_system or []:
+            if not shutil.which(cmd):
+                result.missing_system.append(cmd)
 
-        result.available = not (result.missing_env or result.missing_packages or result.missing_system)
+        result.available = not (
+            result.missing_env or result.missing_packages or result.missing_system
+        )
         return result
 
     def resolve_install_order(self, tools: list[dict]) -> list[str]:
@@ -43,17 +52,20 @@ class DependencyResolver:
             deps = t.get("dependencies", [])
             graph[t["name"]] = deps
 
-        in_degree = {n: 0 for n in graph}
+        in_degree = dict.fromkeys(graph, 0)
         for n, deps in graph.items():
             for d in deps:
-                if d in in_degree: in_degree[n] += 1
+                if d in in_degree:
+                    in_degree[n] += 1
 
         queue = [n for n, d in in_degree.items() if d == 0]
         order = []
         while queue:
-            node = queue.pop(0); order.append(node)
+            node = queue.pop(0)
+            order.append(node)
             for n, deps in graph.items():
                 if node in deps:
                     in_degree[n] -= 1
-                    if in_degree[n] == 0: queue.append(n)
+                    if in_degree[n] == 0:
+                        queue.append(n)
         return order

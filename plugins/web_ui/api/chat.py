@@ -1,12 +1,12 @@
 """Chat API — 对话端点 (SSE 流式 + model 参数)"""
 
 import json
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
+
 from plugins.agent_engine.model_router import TaskType
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
@@ -18,21 +18,21 @@ router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 class ChatRequest(BaseModel):
     content: str
     attachments: list[dict] = Field(default_factory=list)
-    model: Optional[str] = None       # ★ per-message 模型切换
-    task_type: str = "reasoning"      # reasoning | coding | summarization
-    prefer_provider: Optional[str] = None
-    tools: Optional[list[str]] = None
+    model: str | None = None  # ★ per-message 模型切换
+    task_type: str = "reasoning"  # reasoning | coding | summarization
+    prefer_provider: str | None = None
+    tools: list[str] | None = None
     reasoning_effort: Literal["auto", "low", "medium", "high"] = "auto"
     retry: bool = False
 
 
 class SessionCreate(BaseModel):
-    title: Optional[str] = None
+    title: str | None = None
     source: str = "web"
 
 
 class SessionUpdate(BaseModel):
-    title: Optional[str] = None
+    title: str | None = None
 
 
 # ── Storage helpers ──
@@ -62,8 +62,7 @@ def _add_session_usage(session_id: str, usage: dict) -> dict[str, int | float]:
     return {
         **total,
         "cache_hit_rate": (
-            round(total["cached_input_tokens"] / input_tokens, 4)
-            if input_tokens else 0.0
+            round(total["cached_input_tokens"] / input_tokens, 4) if input_tokens else 0.0
         ),
     }
 
@@ -74,8 +73,7 @@ def _get_session_usage(session_id: str) -> dict[str, int | float]:
     return {
         **total,
         "cache_hit_rate": (
-            round(total["cached_input_tokens"] / input_tokens, 4)
-            if input_tokens else 0.0
+            round(total["cached_input_tokens"] / input_tokens, 4) if input_tokens else 0.0
         ),
     }
 
@@ -130,6 +128,7 @@ async def create_session(body: SessionCreate, request: Request):
         return store.get_session(sid)
 
     import uuid
+
     sid = uuid.uuid4().hex[:12]
     session = {
         "id": sid,
@@ -151,7 +150,7 @@ async def list_sessions(request: Request, limit: int = 50, offset: int = 0):
         return {"items": items, "total": len(items)}
     sessions = list(_sessions.values())
     return {
-        "items": sessions[offset:offset + limit],
+        "items": sessions[offset : offset + limit],
         "total": len(sessions),
     }
 
@@ -223,10 +222,14 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
         store = _store(request)
         metrics = getattr(request.app.state, "metrics_collector", None)
         traces = getattr(request.app.state, "trace_collector", None)
-        trace = traces.start_trace(
-            name="chat",
-            trace_id=getattr(request.state, "trace_id", None),
-        ) if traces else None
+        trace = (
+            traces.start_trace(
+                name="chat",
+                trace_id=getattr(request.state, "trace_id", None),
+            )
+            if traces
+            else None
+        )
         pending_tool_spans = []
         current_history = _history(request, session_id)
         last_message = current_history[-1] if current_history else None
@@ -246,7 +249,10 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
                 _append_user_message(session_id, body.content, body.retry)
         current_history = _history(request, session_id)[:-1]
 
-        yield {"event": "message", "data": json.dumps({"type": "thinking", "content": "思考中..."}, ensure_ascii=False)}
+        yield {
+            "event": "message",
+            "data": json.dumps({"type": "thinking", "content": "思考中..."}, ensure_ascii=False),
+        }
 
         task_type_map = {
             "reasoning": "reasoning",
@@ -262,7 +268,10 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
             enabled_tools = [
                 tool.to_dict()
                 for tool in registry.list_enabled()
-                if (not tool.is_dangerous or (requested_tools is not None and tool.name in requested_tools))
+                if (
+                    not tool.is_dangerous
+                    or (requested_tools is not None and tool.name in requested_tools)
+                )
                 and (requested_tools is None or tool.name in requested_tools)
                 and registry.check_dependencies(tool)["available"]
             ]
@@ -291,7 +300,9 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
                         for call in event.get("calls", [])
                     ]
                 elif trace and event.get("type") == "tool_results":
-                    for span, result in zip(pending_tool_spans, event.get("results", [])):
+                    for span, result in zip(
+                        pending_tool_spans, event.get("results", []), strict=False
+                    ):
                         traces.end_span(
                             span,
                             output={
@@ -325,20 +336,25 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
                         session_usage = store.get_session_usage(session_id)
                     else:
                         session_usage = _add_session_usage(session_id, usage)
-                        _messages.setdefault(session_id, []).append({
-                            "role": "assistant",
-                            "content": event["content"],
-                            "model": event.get("model"),
-                            "provider": event.get("provider"),
-                            "usage": usage,
-                        })
+                        _messages.setdefault(session_id, []).append(
+                            {
+                                "role": "assistant",
+                                "content": event["content"],
+                                "model": event.get("model"),
+                                "provider": event.get("provider"),
+                                "usage": usage,
+                            }
+                        )
                     event["session_usage"] = session_usage
                 elif event.get("type") == "error" and trace:
                     for span in pending_tool_spans:
                         if span.end_time is None:
                             traces.end_span(span, error="interrupted")
                     traces.end_span(trace, error=str(event.get("code", "llm_error")))
-                yield {"event": "message", "data": json.dumps(event, ensure_ascii=False, default=str)}
+                yield {
+                    "event": "message",
+                    "data": json.dumps(event, ensure_ascii=False, default=str),
+                }
 
         except Exception as e:
             if trace:
@@ -346,7 +362,10 @@ async def send_message(session_id: str, body: ChatRequest, request: Request):
                     if span.end_time is None:
                         traces.end_span(span, error="interrupted")
                 traces.end_span(trace, error=type(e).__name__)
-            yield {"event": "error", "data": json.dumps({"type": "error", "message": str(e)}, ensure_ascii=False)}
+            yield {
+                "event": "error",
+                "data": json.dumps({"type": "error", "message": str(e)}, ensure_ascii=False),
+            }
 
     return EventSourceResponse(event_stream())
 
@@ -365,7 +384,7 @@ async def get_messages(session_id: str, request: Request, limit: int = 100, offs
         }
     msgs = _messages.get(session_id, [])
     return {
-        "items": msgs[offset:offset + limit],
+        "items": msgs[offset : offset + limit],
         "total": len(msgs),
         "usage": _get_session_usage(session_id),
     }
@@ -423,6 +442,7 @@ async def fork_session(session_id: str, body: dict, request: Request):
     store = getattr(request.app.state, "session_store", None)
     if store:
         from plugins.conversation.session_branch import SessionBranch
+
         sb = SessionBranch(store._conn)
         branch_id = sb.fork(session_id, at_message_id, new_title)
         if branch_id:
@@ -437,7 +457,8 @@ async def merge_session(session_id: str, body: dict, request: Request):
     strategy = body.get("strategy", "rebase")
     store = getattr(request.app.state, "session_store", None)
     if store and branch_id:
-        from plugins.conversation.session_merge import SessionMerge, MergeStrategy
+        from plugins.conversation.session_merge import MergeStrategy, SessionMerge
+
         sm = SessionMerge(store._conn)
         result = sm.merge(branch_id, MergeStrategy(strategy))
         return result
@@ -459,6 +480,7 @@ async def search_sessions(body: dict, request: Request):
     store = getattr(request.app.state, "session_store", None)
     if store:
         from plugins.conversation.search import ConversationSearch
+
         cs = ConversationSearch(store._conn)
         return cs.search_all(body.get("query", ""), body.get("limit", 20))
     return {"messages": [], "sessions": []}
@@ -470,6 +492,7 @@ async def export_session(session_id: str, fmt: str = "markdown", request: Reques
     store = getattr(request.app.state, "session_store", None)
     if store:
         from plugins.conversation.export import ConversationExporter
+
         ce = ConversationExporter(store._conn)
         if fmt == "jsonl":
             return {"format": "jsonl", "data": ce.export_jsonl(session_id)}

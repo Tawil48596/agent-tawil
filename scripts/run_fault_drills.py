@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
-
+from pathlib import Path
 
 DRILLS = [
     "tests/test_checkpoint_store.py",
@@ -15,7 +16,13 @@ DRILLS = [
 
 
 def main() -> int:
-    command = [sys.executable, "-m", "pytest", "-q", "--no-cov", *DRILLS]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--basetemp", type=Path)
+    args = parser.parse_args()
+    command = [sys.executable, "-m", "pytest", "-q", "--no-cov"]
+    if args.basetemp:
+        command.extend(["--basetemp", str(args.basetemp)])
+    command.extend(DRILLS)
     completed = subprocess.run(command, check=False)
     if completed.returncode:
         print("Fault drills failed")

@@ -2,7 +2,6 @@ import type { Message } from "@/types/chat";
 import { MarkdownRenderer } from "@/components/shared/MarkdownRenderer";
 import { ToolCallCard } from "./ToolCallCard";
 import { CodeBlock } from "./CodeBlock";
-import { ThinkingBlock } from "./ThinkingBlock";
 
 export function AssistantMessage({ message, content }: { message?: Message; content?: string }) {
   const text = message?.content || content || "";

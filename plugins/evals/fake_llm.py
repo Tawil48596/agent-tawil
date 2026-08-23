@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Any, AsyncIterator
+from typing import Any
 
 
 @dataclass
@@ -12,11 +13,13 @@ class ScriptedResponse:
     content: str = ""
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     reasoning_content: str = ""
-    usage: dict[str, int] = field(default_factory=lambda: {
-        "prompt_tokens": 1,
-        "completion_tokens": 1,
-        "total_tokens": 2,
-    })
+    usage: dict[str, int] = field(
+        default_factory=lambda: {
+            "prompt_tokens": 1,
+            "completion_tokens": 1,
+            "total_tokens": 2,
+        }
+    )
 
 
 class ScriptedLLM:
@@ -40,15 +43,17 @@ class ScriptedLLM:
         calls = []
         for index, item in enumerate(items):
             function = item.get("function", item)
-            calls.append(SimpleNamespace(
-                index=index if streaming else None,
-                id=item.get("id", f"call_{index + 1}"),
-                type=item.get("type", "function"),
-                function=SimpleNamespace(
-                    name=function["name"],
-                    arguments=function.get("arguments", "{}"),
-                ),
-            ))
+            calls.append(
+                SimpleNamespace(
+                    index=index if streaming else None,
+                    id=item.get("id", f"call_{index + 1}"),
+                    type=item.get("type", "function"),
+                    function=SimpleNamespace(
+                        name=function["name"],
+                        arguments=function.get("arguments", "{}"),
+                    ),
+                )
+            )
         return calls
 
     @classmethod
@@ -60,10 +65,12 @@ class ScriptedLLM:
             tool_calls=tool_calls,
         )
         return SimpleNamespace(
-            choices=[SimpleNamespace(
-                message=message,
-                finish_reason="tool_calls" if tool_calls else "stop",
-            )],
+            choices=[
+                SimpleNamespace(
+                    message=message,
+                    finish_reason="tool_calls" if tool_calls else "stop",
+                )
+            ],
             usage=response.usage,
         )
 
@@ -71,13 +78,15 @@ class ScriptedLLM:
     async def _stream(cls, response: ScriptedResponse) -> AsyncIterator[Any]:
         tool_calls = cls._tool_calls(response.tool_calls, streaming=True)
         yield SimpleNamespace(
-            choices=[SimpleNamespace(
-                delta=SimpleNamespace(
-                    content=response.content or None,
-                    reasoning_content=response.reasoning_content or None,
-                    tool_calls=tool_calls or None,
-                ),
-                finish_reason="tool_calls" if tool_calls else "stop",
-            )],
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        content=response.content or None,
+                        reasoning_content=response.reasoning_content or None,
+                        tool_calls=tool_calls or None,
+                    ),
+                    finish_reason="tool_calls" if tool_calls else "stop",
+                )
+            ],
             usage=response.usage,
         )

@@ -24,9 +24,8 @@ class ToolDispatcher:
     def __init__(
         self,
         timeout: float = 30.0,
-        approval_handler: Callable[
-            [str, dict[str, Any], dict[str, Any]], bool | Awaitable[bool]
-        ] | None = None,
+        approval_handler: Callable[[str, dict[str, Any], dict[str, Any]], bool | Awaitable[bool]]
+        | None = None,
     ):
         self._registry: dict[str, Any] = {}  # tool_name → handler
         self._approval_required: set[str] = set()
@@ -45,16 +44,12 @@ class ToolDispatcher:
 
     def set_approval_handler(
         self,
-        handler: Callable[
-            [str, dict[str, Any], dict[str, Any]], bool | Awaitable[bool]
-        ] | None,
+        handler: Callable[[str, dict[str, Any], dict[str, Any]], bool | Awaitable[bool]] | None,
     ) -> None:
         """Bind an application-owned approval decision provider."""
         self._approval_handler = handler
 
-    def set_audit_handler(
-        self, handler: Callable[..., Any] | None
-    ) -> None:
+    def set_audit_handler(self, handler: Callable[..., Any] | None) -> None:
         self._audit_handler = handler
 
     def set_execution_ledger(self, ledger: Any | None) -> None:
@@ -91,12 +86,14 @@ class ToolDispatcher:
         formatted = []
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                formatted.append({
-                    "index": i,
-                    "name": tool_calls[i].get("function", {}).get("name", "unknown"),
-                    "output": str(result),
-                    "error": True,
-                })
+                formatted.append(
+                    {
+                        "index": i,
+                        "name": tool_calls[i].get("function", {}).get("name", "unknown"),
+                        "output": str(result),
+                        "error": True,
+                    }
+                )
             else:
                 formatted.append(result)
         return formatted
@@ -111,16 +108,16 @@ class ToolDispatcher:
                 result = await self._execute_one(tc, context=context)
                 results.append(result)
             except Exception as e:
-                results.append({
-                    "name": tc.get("function", {}).get("name", "unknown"),
-                    "output": str(e),
-                    "error": True,
-                })
+                results.append(
+                    {
+                        "name": tc.get("function", {}).get("name", "unknown"),
+                        "output": str(e),
+                        "error": True,
+                    }
+                )
         return results
 
-    async def _execute_one(
-        self, tool_call: dict, *, context: dict[str, Any] | None = None
-    ) -> dict:
+    async def _execute_one(self, tool_call: dict, *, context: dict[str, Any] | None = None) -> dict:
         """执行单个工具调用"""
         func = tool_call.get("function", {})
         name = func.get("name", "")
@@ -197,7 +194,9 @@ class ToolDispatcher:
         self._audit("tool.started", tool=name, arguments=args, context=context or {})
         try:
             output = await asyncio.wait_for(
-                handler(**args) if inspect.iscoroutinefunction(handler) else _run_sync(handler, **args),
+                handler(**args)
+                if inspect.iscoroutinefunction(handler)
+                else _run_sync(handler, **args),
                 timeout=self._timeout,
             )
             if isinstance(output, str):
@@ -233,7 +232,7 @@ class ToolDispatcher:
                 else:
                     self._execution_ledger.store(session_id, call_id, name, args, result)
             return result
-        except asyncio.TimeoutError:
+        except TimeoutError:
             if self._execution_ledger is not None:
                 self._execution_ledger.mark_uncertain(
                     session_id, call_id, attempt_id, "execution_timeout"
@@ -249,7 +248,9 @@ class ToolDispatcher:
                 self._execution_ledger.mark_uncertain(
                     session_id, call_id, attempt_id, "execution_failed"
                 )
-            self._audit("tool.failed", tool=name, error_type=type(e).__name__, context=context or {})
+            self._audit(
+                "tool.failed", tool=name, error_type=type(e).__name__, context=context or {}
+            )
             logger.warning("Tool execution failed", name=name, error=str(e))
             return {
                 "name": name,

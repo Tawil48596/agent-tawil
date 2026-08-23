@@ -9,10 +9,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-
 _SENSITIVE_PARTS = (
-    "api_key", "apikey", "authorization", "cookie",
-    "credential", "password", "secret", "token",
+    "api_key",
+    "apikey",
+    "authorization",
+    "cookie",
+    "credential",
+    "password",
+    "secret",
+    "token",
 )
 
 

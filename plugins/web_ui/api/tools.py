@@ -20,8 +20,7 @@ class ExecutionResolveRequest(BaseModel):
 
 
 @router.get("")
-async def list_tools(request: Request, query: str = "", toolset: str = "",
-                      tag: str = ""):
+async def list_tools(request: Request, query: str = "", toolset: str = "", tag: str = ""):
     reg = request.app.state.tool_registry
     tools = reg.search(query=query, toolset=toolset, tag=tag)
     return {"tools": [t.to_dict() for t in tools], "total": len(tools)}
@@ -47,8 +46,9 @@ async def check_dependencies(name: str, request: Request):
 
 
 @router.get("/marketplace/browse")
-async def browse_marketplace(request: Request, query: str = "", tag: str = "",
-                               sort: str = "downloads", limit: int = 20):
+async def browse_marketplace(
+    request: Request, query: str = "", tag: str = "", sort: str = "downloads", limit: int = 20
+):
     mp = request.app.state.marketplace
     entries = mp.browse(query=query, tag=tag, sort_by=sort, limit=limit)
     return {"items": [vars(e) for e in entries], "total": len(entries)}

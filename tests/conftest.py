@@ -1,9 +1,9 @@
 """pytest 共享 fixtures"""
 
 import asyncio
+import contextlib
 import os
 import tempfile
-from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import pytest
@@ -29,6 +29,7 @@ def test_dir():
 def sample_session():
     """提供示例会话数据"""
     from shared.models import Session
+
     return Session(title="Test Session", source="test")
 
 
@@ -36,6 +37,7 @@ def sample_session():
 def sample_message(sample_session):
     """提供示例消息数据"""
     from shared.models import Message
+
     return Message(session_id=sample_session.id, role="user", content="Hello")
 
 
@@ -43,6 +45,7 @@ def sample_message(sample_session):
 def sample_tool_definition():
     """提供示例工具定义"""
     from shared.models import ToolDefinition
+
     return ToolDefinition(
         name="echo",
         description="Echo back the input",
@@ -55,6 +58,7 @@ def sample_tool_definition():
 def sample_memory_entry():
     """提供示例记忆条目"""
     from shared.models import MemoryEntry
+
     return MemoryEntry(
         content="User prefers Python",
         type="preference",
@@ -72,8 +76,7 @@ async def temp_db():
     yield db_path
     # cleanup
     import glob
+
     for f in glob.glob("test_*.db"):
-        try:
+        with contextlib.suppress(OSError):
             os.remove(f)
-        except OSError:
-            pass

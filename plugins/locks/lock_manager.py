@@ -5,8 +5,6 @@ import hashlib
 import json
 import time
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
-from typing import Any, Optional
 
 
 class OptimisticLock:
@@ -29,7 +27,7 @@ class OptimisticLock:
         self._versions[key] = crc
         return data, crc
 
-    async def write(self, key: str, expected_crc: str, new_data: dict) -> tuple[bool, Optional[dict]]:
+    async def write(self, key: str, expected_crc: str, new_data: dict) -> tuple[bool, dict | None]:
         """乐观写入: CRC 匹配则成功，否则重试"""
         for attempt in range(self._max_retries):
             current_crc = self._versions.get(key, "")
@@ -63,9 +61,14 @@ class RedisLock:
 
     async def acquire(self) -> bool:
         """尝试获取锁"""
-        return bool(await self._redis.set(
-            self._key, self._token, nx=True, ex=self._ttl,
-        ))
+        return bool(
+            await self._redis.set(
+                self._key,
+                self._token,
+                nx=True,
+                ex=self._ttl,
+            )
+        )
 
     async def release(self):
         """释放锁 (Lua 脚本保证原子性)"""
@@ -95,11 +98,12 @@ class LockAcquisitionError(Exception):
 class LockManager:
     """锁管理器 — 自动选择 Redlock 或乐观锁"""
 
-    def __init__(self, redis_url: Optional[str] = None):
+    def __init__(self, redis_url: str | None = None):
         self._redis = None
         if redis_url:
             try:
                 import redis.asyncio as aioredis
+
                 self._redis = aioredis.from_url(redis_url, decode_responses=True)
             except ImportError:
                 pass

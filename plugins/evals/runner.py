@@ -3,9 +3,9 @@
 import json
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
 
 import structlog
 import yaml
@@ -54,14 +54,14 @@ class EvalRunner:
         except (OSError, ValueError, json.JSONDecodeError):
             logger.warning("Ignoring corrupt eval history", path=str(self._history_path))
             return []
-        return payload[-self._history_limit:]
+        return payload[-self._history_limit :]
 
     def _persist_history(self) -> None:
         if self._history_path is None:
             return
         write_collection(self._history_path, self._history)
 
-    def load_suite(self, name: str) -> Optional[TestSuite]:
+    def load_suite(self, name: str) -> TestSuite | None:
         """从 YAML 文件加载测试集"""
         path = self._suites_dir / f"{name}.yaml"
         if not path.exists():
@@ -80,11 +80,11 @@ class EvalRunner:
     def list_suites(self) -> list[str]:
         if not self._suites_dir.exists():
             return []
-        return [p.stem for p in self._suites_dir.glob("*.yaml")] + \
-               [p.stem for p in self._suites_dir.glob("*.yml")]
+        return [p.stem for p in self._suites_dir.glob("*.yaml")] + [
+            p.stem for p in self._suites_dir.glob("*.yml")
+        ]
 
-    async def run(self, suite_name: str, agent_fn: Callable,
-                   judge=None) -> dict:
+    async def run(self, suite_name: str, agent_fn: Callable, judge=None) -> dict:
         """运行评测"""
         suite = self.load_suite(suite_name)
         if not suite:
@@ -114,14 +114,17 @@ class EvalRunner:
                 tool_accuracy = (
                     len(set(actual_tools) & set(expected_tools))
                     / len(set(actual_tools) | set(expected_tools))
-                    if actual_tools or expected_tools else 1.0
+                    if actual_tools or expected_tools
+                    else 1.0
                 )
                 expected_arguments = expected.get("tool_arguments", {}) or {}
                 argument_matches = sum(
                     1
                     for tool, values in expected_arguments.items()
                     if isinstance(actual_arguments.get(tool), dict)
-                    and all(actual_arguments[tool].get(key) == value for key, value in values.items())
+                    and all(
+                        actual_arguments[tool].get(key) == value for key, value in values.items()
+                    )
                 )
                 argument_accuracy = (
                     argument_matches / len(expected_arguments) if expected_arguments else 1.0
@@ -138,26 +141,30 @@ class EvalRunner:
                     and budget_passed
                 )
 
-                results.append({
-                    "case": case_data.get("id", ""),
-                    "passed": passed,
-                    "latency_ms": latency_ms,
-                    "keywords_matched": kw_matched,
-                    "keywords_expected": kw,
-                    "tools_actual": actual_tools,
-                    "tools_expected": expected_tools,
-                    "tool_accuracy": round(tool_accuracy, 3),
-                    "argument_accuracy": round(argument_accuracy, 3),
-                    "budget_passed": budget_passed,
-                    "score": round((keyword_score + tool_accuracy + argument_accuracy) / 3, 3),
-                    "total_tokens": total_tokens,
-                })
+                results.append(
+                    {
+                        "case": case_data.get("id", ""),
+                        "passed": passed,
+                        "latency_ms": latency_ms,
+                        "keywords_matched": kw_matched,
+                        "keywords_expected": kw,
+                        "tools_actual": actual_tools,
+                        "tools_expected": expected_tools,
+                        "tool_accuracy": round(tool_accuracy, 3),
+                        "argument_accuracy": round(argument_accuracy, 3),
+                        "budget_passed": budget_passed,
+                        "score": round((keyword_score + tool_accuracy + argument_accuracy) / 3, 3),
+                        "total_tokens": total_tokens,
+                    }
+                )
             except Exception as e:
-                results.append({
-                    "case": case_data.get("id", ""),
-                    "passed": False,
-                    "error_type": type(e).__name__,
-                })
+                results.append(
+                    {
+                        "case": case_data.get("id", ""),
+                        "passed": False,
+                        "error_type": type(e).__name__,
+                    }
+                )
 
         elapsed = time.time() - start
         passed = sum(1 for r in results if r["passed"])
@@ -188,7 +195,7 @@ class EvalRunner:
         }
 
         self._history.append(report)
-        self._history = self._history[-self._history_limit:]
+        self._history = self._history[-self._history_limit :]
         self._persist_history()
         logger.info("Eval complete", suite=suite_name, pass_rate=report["pass_rate"])
         return report
@@ -197,14 +204,17 @@ class EvalRunner:
         history = [item for item in self._history if not suite or item.get("suite") == suite]
         return history[-limit:] if limit is not None else history
 
-    def compare_last(self, agent_fn: Callable | None = None) -> Optional[dict]:
+    def compare_last(self, agent_fn: Callable | None = None) -> dict | None:
         """对比最近两次运行"""
         if not self._history:
             return None
         new = self._history[-1]
         old = next(
-            (item for item in reversed(self._history[:-1])
-             if item.get("suite") == new.get("suite")),
+            (
+                item
+                for item in reversed(self._history[:-1])
+                if item.get("suite") == new.get("suite")
+            ),
             None,
         )
         if old is None:

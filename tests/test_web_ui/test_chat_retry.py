@@ -34,22 +34,28 @@ def test_session_usage_accumulates_and_calculates_cache_hit_rate():
     session_id = "usage-test"
     _session_usage.pop(session_id, None)
 
-    _add_session_usage(session_id, {
-        "input_tokens": 100,
-        "cached_input_tokens": 40,
-        "output_tokens": 20,
-        "reasoning_tokens": 5,
-        "total_tokens": 120,
-        "requests": 1,
-    })
-    result = _add_session_usage(session_id, {
-        "input_tokens": 50,
-        "cached_input_tokens": 20,
-        "cache_write_input_tokens": 10,
-        "output_tokens": 10,
-        "total_tokens": 60,
-        "requests": 1,
-    })
+    _add_session_usage(
+        session_id,
+        {
+            "input_tokens": 100,
+            "cached_input_tokens": 40,
+            "output_tokens": 20,
+            "reasoning_tokens": 5,
+            "total_tokens": 120,
+            "requests": 1,
+        },
+    )
+    result = _add_session_usage(
+        session_id,
+        {
+            "input_tokens": 50,
+            "cached_input_tokens": 20,
+            "cache_write_input_tokens": 10,
+            "output_tokens": 10,
+            "total_tokens": 60,
+            "requests": 1,
+        },
+    )
 
     assert result["requests"] == 2
     assert result["total_tokens"] == 180

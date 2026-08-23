@@ -5,7 +5,6 @@ import os
 import secrets
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -44,6 +43,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
 # ── API Key 管理 ──
 
+
 class APIKeyManager:
     def __init__(self):
         self._hash_salt = secrets.token_bytes(16)
@@ -62,7 +62,7 @@ class APIKeyManager:
         }
         return raw
 
-    def validate(self, raw_key: str) -> Optional[str]:
+    def validate(self, raw_key: str) -> str | None:
         """验证 API Key，返回 user_id"""
         hashed = self._hash(raw_key)
         if hashed in self._revoked:
@@ -89,6 +89,7 @@ class APIKeyManager:
 
 # ── JWT ──
 
+
 class JWTHandler:
     def __init__(self, secret: str = None):
         self._secret = secret or os.environ.get("JWT_SECRET", "dev-secret-change-me")
@@ -98,6 +99,7 @@ class JWTHandler:
         """签发 JWT"""
         try:
             from jose import jwt
+
             payload = {
                 "sub": user_id,
                 "iat": datetime.now(UTC),
@@ -110,12 +112,13 @@ class JWTHandler:
             sig = hashlib.sha256(f"{payload}:{self._secret}".encode()).hexdigest()[:16]
             return f"{payload}:{sig}"
 
-    def verify(self, token: str) -> Optional[str]:
+    def verify(self, token: str) -> str | None:
         """验证 JWT，返回 user_id"""
         if token in self._blacklist:
             return None
         try:
             from jose import jwt
+
             payload = jwt.decode(token, self._secret, algorithms=["HS256"])
             return payload.get("sub")
         except ImportError:
@@ -141,7 +144,7 @@ api_keys = APIKeyManager()
 jwt_handler = JWTHandler()
 
 
-def authenticate_headers(authorization: str = "", x_api_key: str = "") -> Optional[str]:
+def authenticate_headers(authorization: str = "", x_api_key: str = "") -> str | None:
     authorization = authorization or ""
     x_api_key = x_api_key or ""
     if authorization.startswith("Bearer "):
@@ -154,6 +157,7 @@ def authenticate_headers(authorization: str = "", x_api_key: str = "") -> Option
 
 
 # ── 依赖注入 ──
+
 
 async def get_current_user(
     request: Request,
@@ -172,6 +176,7 @@ async def get_current_user(
 
 
 # ── API ──
+
 
 @router.post("/api-key")
 async def create_api_key(name: str = "", user_id: str = Depends(get_current_user)):

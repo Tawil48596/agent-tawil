@@ -1,7 +1,6 @@
 """系统提示词构建器 — 注入环境信息、工具列表、记忆、技能"""
 
 from datetime import datetime
-from typing import Any, Optional
 
 
 class PromptBuilder:
@@ -22,16 +21,18 @@ class PromptBuilder:
 
     def build_system_prompt(
         self,
-        session: Optional[dict] = None,
-        memories: Optional[list[dict]] = None,
-        rag_context: Optional[list[dict]] = None,
-        enabled_tools: Optional[list[dict]] = None,
-        skill_files: Optional[list[str]] = None,
+        session: dict | None = None,
+        memories: list[dict] | None = None,
+        rag_context: list[dict] | None = None,
+        enabled_tools: list[dict] | None = None,
+        skill_files: list[str] | None = None,
     ) -> str:
         """构建完整的系统提示词"""
-        parts = [self.BASE_SYSTEM_PROMPT.format(
-            current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        )]
+        parts = [
+            self.BASE_SYSTEM_PROMPT.format(
+                current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+        ]
 
         # 会话信息
         if session:

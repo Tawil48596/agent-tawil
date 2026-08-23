@@ -1,6 +1,6 @@
 """链式协作: A → B → C"""
 
-from typing import Any, Callable
+from collections.abc import Callable
 
 
 class ChainPattern:
@@ -11,7 +11,7 @@ class ChainPattern:
         prev_output = ""
         for task in tasks:
             if prev_output:
-                task["context"] = (task.get("context", "") + f"\n[上一步输出]\n{prev_output[:2000]}")
+                task["context"] = task.get("context", "") + f"\n[上一步输出]\n{prev_output[:2000]}"
             result = await executor(task)
             results.append(result)
             prev_output = result.get("result", result.get("error", ""))

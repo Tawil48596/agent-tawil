@@ -2,7 +2,6 @@
 
 import os
 from pathlib import Path
-from typing import Optional
 
 
 class GitHubSource:
@@ -23,8 +22,14 @@ class GitHubSource:
                 if any(skip in str(f) for skip in [".git", "node_modules", "__pycache__"]):
                     continue
                 content = f.read_text(encoding="utf-8", errors="replace")
-                docs.append({
-                    "content": content[:10000],
-                    "metadata": {"source": f"github:{owner}/{repo}", "path": str(f.relative_to(repo_path)), "type": "markdown"},
-                })
+                docs.append(
+                    {
+                        "content": content[:10000],
+                        "metadata": {
+                            "source": f"github:{owner}/{repo}",
+                            "path": str(f.relative_to(repo_path)),
+                            "type": "markdown",
+                        },
+                    }
+                )
         return docs

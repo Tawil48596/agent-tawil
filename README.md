@@ -115,11 +115,11 @@ DEEPSEEK_API_KEY
 agent-tawil/
 ├── core/              # 微内核基础组件
 ├── plugins/           # Agent、会话、记忆、RAG、MCP 等模块
-├── services/          # 服务编排层
 ├── shared/            # 共享模型、数据库与工具
 ├── web/               # React + TypeScript 前端
 ├── tests/             # 自动测试
 ├── docs/              # 架构文档
+├── CONTEXT.md         # 领域模型与代码导航
 ├── launcher.py        # 本地启动器
 ├── 启动.bat           # Windows 双击启动
 └── app.py             # FastAPI 底层入口
@@ -128,13 +128,15 @@ agent-tawil/
 ## 开发与验证
 
 ```bash
-python -m pytest
-cd web
-npm ci
-npm run build
+uv sync --frozen --extra dev
+uv run --frozen python -m scripts.run_release_gates
 ```
 
-## 1.x 后续路线
+发布门禁统一执行 Python 测试与覆盖率、关键模块阈值、离线 Agent 评测、恢复演示、故障演练、备份往返、敏感信息扫描以及 Web lint、测试和生产构建。机器可读证据默认写入被 Git 忽略的 `data/release/evidence.json`。
+
+## 2.x 后续路线
+
+当前的发布可信度、仓库治理、插件架构和 UI/交互改进安排见 [2.x 改进计划](docs/improvement-plan-2.x.md)。
 
 1. 增加 PostgreSQL、Redis、Milvus 和 Mem0 的真实集成环境测试。
 2. 增加反向代理、限流、密钥托管和多租户授权参考部署。

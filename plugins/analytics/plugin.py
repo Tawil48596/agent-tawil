@@ -13,9 +13,10 @@ class AnalyticsPlugin(PluginProtocol):
         return "0.1.1"
 
     async def on_load(self, container):
-        from plugins.analytics.collector import UsageCollector
         from plugins.analytics.aggregator import UsageAggregator
+        from plugins.analytics.collector import UsageCollector
         from plugins.analytics.cost_calculator import CostCalculator
+
         self.collector = UsageCollector()
         self.aggregator = UsageAggregator()
         self.calculator = CostCalculator()
@@ -23,4 +24,12 @@ class AnalyticsPlugin(PluginProtocol):
         container.register("UsageAggregator", self.aggregator)
 
     def get_extensions(self):
-        return {"collector": self.collector, "aggregator": self.aggregator}
+        return {
+            "collector": self.collector,
+            "aggregator": self.aggregator,
+            "cost_calculator": self.calculator,
+        }
+
+
+def create_plugin() -> AnalyticsPlugin:
+    return AnalyticsPlugin()

@@ -8,7 +8,6 @@ import re
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -53,7 +52,9 @@ class ToolPackageStore:
         if self._trusted_key:
             if not manifest.signature:
                 raise ValueError("Package signature is required")
-            expected = hmac.new(self._trusted_key, digest.encode("ascii"), hashlib.sha256).hexdigest()
+            expected = hmac.new(
+                self._trusted_key, digest.encode("ascii"), hashlib.sha256
+            ).hexdigest()
             if not hmac.compare_digest(expected, manifest.signature.lower()):
                 raise ValueError("Package signature is invalid")
 
@@ -63,9 +64,12 @@ class ToolPackageStore:
         for member in archive.infolist():
             normalized = member.filename.replace("\\", "/")
             path = PurePosixPath(normalized)
-            if (path.is_absolute() or ".." in path.parts or
-                    member.filename.startswith(("/", "\\")) or
-                    any(":" in part for part in path.parts)):
+            if (
+                path.is_absolute()
+                or ".." in path.parts
+                or member.filename.startswith(("/", "\\"))
+                or any(":" in part for part in path.parts)
+            ):
                 raise ValueError("Package contains an unsafe path")
             if member.is_dir() or not member.filename.endswith((".py", ".json", ".md", ".txt")):
                 continue
@@ -88,10 +92,15 @@ class ToolPackageStore:
         record["previous"] = previous
         record["active"] = manifest.version
         self._save()
-        return {"ok": True, "name": manifest.name, "version": manifest.version,
-                "previous": previous, "path": str(target)}
+        return {
+            "ok": True,
+            "name": manifest.name,
+            "version": manifest.version,
+            "previous": previous,
+            "path": str(target),
+        }
 
-    def rollback(self, name: str, version: Optional[str] = None) -> dict:
+    def rollback(self, name: str, version: str | None = None) -> dict:
         record = self._state.get(name)
         if not record:
             raise ValueError(f"Tool package not installed: {name}")

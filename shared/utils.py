@@ -2,12 +2,15 @@
 
 import json
 import time
-from datetime import datetime, timezone
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
+from typing import Any, TypeVar
+
+T = TypeVar("T")
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def now_ts() -> int:
@@ -34,12 +37,12 @@ def truncate(text: str, max_len: int = 200, suffix: str = "...") -> str:
     return text[:max_len] + suffix
 
 
-def chunk_list(items: list, size: int):
+def chunk_list(items: list[T], size: int) -> Iterator[list[T]]:
     """将列表按 size 分块"""
     for i in range(0, len(items), size):
         yield items[i : i + size]
 
 
-async def async_collect(iterator: AsyncIterator) -> list:
+async def async_collect(iterator: AsyncIterator[T]) -> list[T]:
     """收集 AsyncIterator 所有元素"""
     return [item async for item in iterator]

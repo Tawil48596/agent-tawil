@@ -2,8 +2,9 @@
 
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 import structlog
 
@@ -19,11 +20,14 @@ class Event:
     data: dict[str, Any] = field(default_factory=dict)
 
 
+EventHandler = Callable[[Event], Any]
+
+
 class EventBus:
     """发布/订阅事件总线"""
 
-    def __init__(self):
-        self._subscribers: dict[str, list[Callable]] = defaultdict(list)
+    def __init__(self) -> None:
+        self._subscribers: dict[str, list[EventHandler]] = defaultdict(list)
         self._history: list[Event] = []
         self._max_history = 500
 
@@ -31,12 +35,13 @@ class EventBus:
         """发布事件到所有订阅者"""
         self._history.append(event)
         if len(self._history) > self._max_history:
-            self._history = self._history[-self._max_history:]
+            self._history = self._history[-self._max_history :]
 
         handlers = self._subscribers.get(event.type, []) + self._subscribers.get("*", [])
         for handler in handlers:
             try:
                 import inspect
+
                 if inspect.iscoroutinefunction(handler):
                     await handler(event)
                 else:
@@ -44,11 +49,11 @@ class EventBus:
             except Exception as e:
                 logger.warning("Event handler error", event_type=event.type, error=str(e))
 
-    def subscribe(self, event_type: str, handler: Callable) -> None:
+    def subscribe(self, event_type: str, handler: EventHandler) -> None:
         """订阅事件类型"""
         self._subscribers[event_type].append(handler)
 
-    def unsubscribe(self, event_type: str, handler: Callable) -> None:
+    def unsubscribe(self, event_type: str, handler: EventHandler) -> None:
         """取消订阅"""
         if handler in self._subscribers[event_type]:
             self._subscribers[event_type].remove(handler)
@@ -65,6 +70,7 @@ AGENT_TURN_END = "agent.turn.end"
 TOOL_CALL_BEFORE = "tool.call.before"
 TOOL_CALL_AFTER = "tool.call.after"
 SESSION_CREATED = "session.created"
+SESSION_UPDATED = "session.updated"
 SESSION_DELETED = "session.deleted"
 MEMORY_SAVED = "memory.saved"
 MEMORY_RETRIEVED = "memory.retrieved"

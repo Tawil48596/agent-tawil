@@ -2,10 +2,8 @@
 
 import json
 import sqlite3
-import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
 
 
 class SessionStore:
@@ -14,7 +12,7 @@ class SessionStore:
     def __init__(self, db_path: str = "data/agent.db"):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._db_path = db_path
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
 
     def connect(self):
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
@@ -65,8 +63,7 @@ class SessionStore:
             CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
         """)
         columns = {
-            row["name"]
-            for row in self._conn.execute("PRAGMA table_info(messages)").fetchall()
+            row["name"] for row in self._conn.execute("PRAGMA table_info(messages)").fetchall()
         }
         for name, definition in {
             "model": "TEXT",
@@ -88,9 +85,11 @@ class SessionStore:
 
     # ── Session CRUD ──
 
-    def create_session(self, title: str = "新对话", source: str = "web",
-                        profile: str = None, metadata: dict = None) -> str:
+    def create_session(
+        self, title: str = "新对话", source: str = "web", profile: str = None, metadata: dict = None
+    ) -> str:
         import uuid
+
         sid = uuid.uuid4().hex[:12]
         now = datetime.now().isoformat()
         self._conn.execute(
@@ -101,14 +100,11 @@ class SessionStore:
         self._conn.commit()
         return sid
 
-    def get_session(self, session_id: str) -> Optional[dict]:
-        row = self._conn.execute(
-            "SELECT * FROM sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+    def get_session(self, session_id: str) -> dict | None:
+        row = self._conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
         return dict(row) if row else None
 
-    def list_sessions(self, limit: int = 50, offset: int = 0,
-                       source: str = None) -> list[dict]:
+    def list_sessions(self, limit: int = 50, offset: int = 0, source: str = None) -> list[dict]:
         query = "SELECT * FROM sessions"
         params = []
         if source:
@@ -128,8 +124,7 @@ class SessionStore:
             row["preview"] = summary["preview"] or ""
         return rows
 
-    def update_session(self, session_id: str, title: str = None,
-                        metadata: dict = None) -> bool:
+    def update_session(self, session_id: str, title: str = None, metadata: dict = None) -> bool:
         updates = []
         params = []
         if title:
@@ -142,9 +137,7 @@ class SessionStore:
             updates.append("updated_at = ?")
             params.append(datetime.now().isoformat())
             params.append(session_id)
-            self._conn.execute(
-                f"UPDATE sessions SET {', '.join(updates)} WHERE id = ?", params
-            )
+            self._conn.execute(f"UPDATE sessions SET {', '.join(updates)} WHERE id = ?", params)
             self._conn.commit()
             return True
         return False
@@ -157,7 +150,8 @@ class SessionStore:
         )
         # 先删消息 + FTS5
         self._conn.execute(
-            "DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE session_id = ?)",
+            "DELETE FROM messages_fts WHERE rowid IN "
+            "(SELECT id FROM messages WHERE session_id = ?)",
             (session_id,),
         )
         self._conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
@@ -167,18 +161,34 @@ class SessionStore:
 
     # ── Message CRUD ──
 
-    def add_message(self, session_id: str, role: str, content: str,
-                     tool_calls: list = None, token_count: int = 0,
-                     parent_msg_id: int = None, model: str = None,
-                     provider: str = None, usage: dict = None) -> int:
+    def add_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        tool_calls: list = None,
+        token_count: int = 0,
+        parent_msg_id: int = None,
+        model: str = None,
+        provider: str = None,
+        usage: dict = None,
+    ) -> int:
         cur = self._conn.execute(
             """INSERT INTO messages (
                    session_id, parent_msg_id, role, content, tool_calls,
                    token_count, model, provider, usage
                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (session_id, parent_msg_id, role, content,
-             json.dumps(tool_calls or [], ensure_ascii=False), token_count,
-             model, provider, json.dumps(usage or {}, ensure_ascii=False)),
+            (
+                session_id,
+                parent_msg_id,
+                role,
+                content,
+                json.dumps(tool_calls or [], ensure_ascii=False),
+                token_count,
+                model,
+                provider,
+                json.dumps(usage or {}, ensure_ascii=False),
+            ),
         )
         msg_id = cur.lastrowid
         # Sync FTS5
@@ -218,7 +228,7 @@ class SessionStore:
             "total_tokens",
             "requests",
         )
-        total = {key: 0 for key in keys}
+        total = dict.fromkeys(keys, 0)
         rows = self._conn.execute(
             "SELECT usage FROM messages WHERE session_id = ? AND role = 'assistant'",
             (session_id,),
@@ -232,7 +242,8 @@ class SessionStore:
                 total[key] += int(usage.get(key, 0) or 0)
         total["cache_hit_rate"] = (
             round(total["cached_input_tokens"] / total["input_tokens"], 4)
-            if total["input_tokens"] else 0.0
+            if total["input_tokens"]
+            else 0.0
         )
         return total
 
@@ -241,7 +252,7 @@ class SessionStore:
     def search(self, query: str, limit: int = 20) -> list[dict]:
         """FTS5 全文搜索"""
         # 清理查询中的特殊字符
-        clean_query = query.replace('"', '').replace("'", "")
+        clean_query = query.replace('"', "").replace("'", "")
         fts_query = " OR ".join(f'"{word}"' for word in clean_query.split() if word)
 
         rows = self._conn.execute(

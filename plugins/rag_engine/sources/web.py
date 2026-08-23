@@ -12,6 +12,7 @@ class WebSource:
         try:
             import httpx
             from bs4 import BeautifulSoup
+
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
                 resp = await client.get(url, headers={"User-Agent": "ai-agent-platform/0.1"})
                 soup = BeautifulSoup(resp.text, "html.parser")

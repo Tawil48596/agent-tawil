@@ -2,7 +2,7 @@
 
 import inspect
 import json
-from typing import Any, Callable
+from collections.abc import Callable
 
 import structlog
 
@@ -75,7 +75,6 @@ class MCPServer:
             }
 
         try:
-            import asyncio
             if inspect.iscoroutinefunction(handler):
                 result = await handler(**arguments)
             else:

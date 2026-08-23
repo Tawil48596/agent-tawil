@@ -1,7 +1,5 @@
 """查询改写 — HyDE + 多角度查询"""
 
-from typing import Optional
-
 
 class QueryRewriter:
     """查询改写器

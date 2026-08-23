@@ -1,12 +1,11 @@
 """容器化沙箱 — 双模式 (subprocess + Docker) + 资源限制 + 超时保护"""
 
 import asyncio
+import contextlib
 import os
 import shlex
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
 
 
 @dataclass
@@ -34,7 +33,7 @@ class SandboxConfig:
 class Sandbox:
     """代码/命令执行沙箱"""
 
-    def __init__(self, config: Optional[SandboxConfig] = None):
+    def __init__(self, config: SandboxConfig | None = None):
         self._config = config or SandboxConfig()
         Path(self._config.workspace).mkdir(parents=True, exist_ok=True)
 
@@ -46,7 +45,7 @@ class Sandbox:
         self,
         command: str,
         workdir: str = "",
-        env: Optional[dict[str, str]] = None,
+        env: dict[str, str] | None = None,
         stdin: str = "",
     ) -> SandboxResult:
         """执行命令，自动选择 subprocess 或 Docker 模式"""
@@ -94,14 +93,15 @@ class Sandbox:
                 exit_code=proc.returncode or 0,
             )
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             if proc:
-                try:
+                with contextlib.suppress(Exception):
                     proc.kill()
-                except Exception:
-                    pass
             return SandboxResult(
-                stdout="", stderr="命令执行超时", exit_code=-1, timed_out=True,
+                stdout="",
+                stderr="命令执行超时",
+                exit_code=-1,
+                timed_out=True,
             )
 
     # ── Docker 模式 ──
@@ -112,15 +112,22 @@ class Sandbox:
         workdir = workdir or self._config.workspace
 
         docker_args = [
-            "docker", "run", "--rm",
-            "--memory", self._config.memory_limit,
-            "--cpus", str(self._config.cpu_limit),
-            "--network", "none" if not self._config.network_enabled else "bridge",
-            "--read-only" if self._config.read_only else "",
-            "-v", f"{workdir}:{workdir}",
-            "-w", workdir,
+            "docker",
+            "run",
+            "--rm",
+            "--memory",
+            self._config.memory_limit,
+            "--cpus",
+            str(self._config.cpu_limit),
+            "--network",
+            "none" if not self._config.network_enabled else "bridge",
+            "--read-only" if self._config.read_only_root else "",
+            "-v",
+            f"{workdir}:{workdir}",
+            "-w",
+            workdir,
         ]
-        if self._config.read_only:
+        if self._config.read_only_root:
             docker_args.extend(["--tmpfs", "/tmp:exec"])
 
         docker_args = [a for a in docker_args if a]  # 过滤空字符串
@@ -142,7 +149,7 @@ class Sandbox:
                 stderr=stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else "",
                 exit_code=proc.returncode or 0,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return SandboxResult(stdout="", stderr="命令执行超时", exit_code=-1, timed_out=True)
 
     # ── 简单接口 ──
@@ -150,13 +157,14 @@ class Sandbox:
     async def run_python(self, code: str) -> SandboxResult:
         """在沙箱中运行 Python 代码"""
         import tempfile
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, dir=self._config.workspace) as f:
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False, dir=self._config.workspace
+        ) as f:
             f.write(code)
             tmp_path = f.name
         try:
             return await self.execute(f"python {shlex.quote(tmp_path)}")
         finally:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp_path)
-            except OSError:
-                pass

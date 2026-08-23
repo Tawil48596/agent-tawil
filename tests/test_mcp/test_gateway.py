@@ -10,10 +10,24 @@ class FakeAdapter:
         self.delay = delay
 
     def list_tools(self):
-        return [{"name": "echo", "inputSchema": {"type": "object",
-                 "properties": {"text": {"type": "string"}}, "required": ["text"]}},
-                {"name": "github_clone_repo", "inputSchema": {"type": "object",
-                 "properties": {"owner": {"type": "string"}}, "required": ["owner"]}}]
+        return [
+            {
+                "name": "echo",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"],
+                },
+            },
+            {
+                "name": "github_clone_repo",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"owner": {"type": "string"}},
+                    "required": ["owner"],
+                },
+            },
+        ]
 
     async def call_tool(self, name, arguments):
         await asyncio.sleep(self.delay)

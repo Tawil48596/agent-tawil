@@ -1,6 +1,5 @@
 """本地文件系统 MCP 适配器"""
 
-import json
 import os
 from pathlib import Path
 
@@ -14,14 +13,42 @@ class FilesystemMCPAdapter:
 
     def list_tools(self) -> list[dict]:
         return [
-            {"name": "fs_list", "description": "列出目录文件",
-             "inputSchema": {"type": "object", "properties": {"path": {"type": "string", "default": "."}}, "required": []}},
-            {"name": "fs_read", "description": "读取文件内容",
-             "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
-            {"name": "fs_write", "description": "写入文件",
-             "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
-            {"name": "fs_delete", "description": "删除文件",
-             "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
+            {
+                "name": "fs_list",
+                "description": "列出目录文件",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string", "default": "."}},
+                    "required": [],
+                },
+            },
+            {
+                "name": "fs_read",
+                "description": "读取文件内容",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"],
+                },
+            },
+            {
+                "name": "fs_write",
+                "description": "写入文件",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+                    "required": ["path", "content"],
+                },
+            },
+            {
+                "name": "fs_delete",
+                "description": "删除文件",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"],
+                },
+            },
         ]
 
     async def call_tool(self, name: str, arguments: dict) -> dict:
@@ -45,7 +72,13 @@ class FilesystemMCPAdapter:
             return {"error": "Path not found"}
         items = []
         for f in p.iterdir():
-            items.append({"name": f.name, "type": "dir" if f.is_dir() else "file", "size": f.stat().st_size if f.is_file() else 0})
+            items.append(
+                {
+                    "name": f.name,
+                    "type": "dir" if f.is_dir() else "file",
+                    "size": f.stat().st_size if f.is_file() else 0,
+                }
+            )
         return {"path": str(p), "items": items[:100]}
 
     async def _tool_fs_read(self, path: str) -> dict:

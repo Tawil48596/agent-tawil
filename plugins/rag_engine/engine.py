@@ -1,16 +1,15 @@
 """RAG 主引擎 — 索引 + 检索 + 注入"""
 
 from dataclasses import asdict
-from typing import Any, Optional
 
 import structlog
 
-from plugins.rag_engine.indexer import DocumentIndexer
-from plugins.rag_engine.retriever import HybridRetriever
-from plugins.rag_engine.reranker import Reranker
-from plugins.rag_engine.query_rewriter import QueryRewriter
 from plugins.rag_engine.guardrail import RetrievalGuardrail
+from plugins.rag_engine.indexer import DocumentIndexer
 from plugins.rag_engine.knowledge_base import DocumentRecord, KnowledgeBaseManager
+from plugins.rag_engine.query_rewriter import QueryRewriter
+from plugins.rag_engine.reranker import Reranker
+from plugins.rag_engine.retriever import HybridRetriever
 from plugins.rag_engine.vector_store import VectorStore
 
 logger = structlog.get_logger()
@@ -60,19 +59,15 @@ class RAGEngine:
         return result
 
     async def list_documents(self, kb_id: str) -> list[dict]:
-        return [
-            asdict(document)
-            for document in self._kb_manager.list_documents(kb_id)
-        ]
+        return [asdict(document) for document in self._kb_manager.list_documents(kb_id)]
 
     # ── Document Indexing ──
 
-    async def index_document(self, kb_id: str, content: str, metadata: dict = None,
-                              chunk_strategy: str = "fixed") -> int:
+    async def index_document(
+        self, kb_id: str, content: str, metadata: dict = None, chunk_strategy: str = "fixed"
+    ) -> int:
         """索引单篇文档，返回 chunk 数量"""
-        result = await self.index_document_with_record(
-            kb_id, content, metadata, chunk_strategy
-        )
+        result = await self.index_document_with_record(kb_id, content, metadata, chunk_strategy)
         return result["chunk_count"]
 
     async def index_document_with_record(
@@ -99,9 +94,7 @@ class RAGEngine:
             "kb_id": kb_id,
             "source": source,
         }
-        chunks = await self._indexer.index(
-            content, normalized_metadata, chunk_strategy
-        )
+        chunks = await self._indexer.index(content, normalized_metadata, chunk_strategy)
         for index, chunk in enumerate(chunks):
             chunk["id"] = f"{document_id}_{index}"
         await self._vector_store.add(f"kb_{kb_id}", chunks)
@@ -113,10 +106,7 @@ class RAGEngine:
             size_bytes=int(metadata.get("size", len(content.encode("utf-8")))),
             chunk_count=len(chunks),
             chunk_strategy=chunk_strategy,
-            metadata={
-                key: value for key, value in metadata.items()
-                if key not in {"size"}
-            },
+            metadata={key: value for key, value in metadata.items() if key not in {"size"}},
         )
         self._kb_manager.add_document(kb_id, record)
         await self._refresh_sparse_index(kb_id)
@@ -138,20 +128,23 @@ class RAGEngine:
             [chunk.get("content", "") for chunk in chunks],
         )
 
-    async def index_documents(self, kb_id: str, documents: list[dict],
-                               chunk_strategy: str = "fixed") -> int:
+    async def index_documents(
+        self, kb_id: str, documents: list[dict], chunk_strategy: str = "fixed"
+    ) -> int:
         """批量索引文档"""
         total = 0
         for doc in documents:
-            n = await self.index_document(kb_id, doc.get("content", ""),
-                                           doc.get("metadata"), chunk_strategy)
+            n = await self.index_document(
+                kb_id, doc.get("content", ""), doc.get("metadata"), chunk_strategy
+            )
             total += n
         return total
 
     # ── Retrieval ──
 
-    async def query(self, query: str, kb_ids: list[str] = None,
-                     top_k: int = None, apply_guardrail: bool = True) -> dict:
+    async def query(
+        self, query: str, kb_ids: list[str] = None, top_k: int = None, apply_guardrail: bool = True
+    ) -> dict:
         """检索查询 — 完整 pipeline"""
         top_k = top_k or self._top_k
 

@@ -11,9 +11,7 @@ def _store(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_checkpoint_save_is_atomic_and_updates_memory_after_commit(
-    tmp_path, monkeypatch
-):
+async def test_checkpoint_save_is_atomic_and_updates_memory_after_commit(tmp_path, monkeypatch):
     store = _store(tmp_path)
     checkpoint = Checkpoint(id="cp-1", task_id="task-1", state={"step": 1})
 
@@ -33,9 +31,7 @@ async def test_checkpoint_save_is_atomic_and_updates_memory_after_commit(
 @pytest.mark.asyncio
 async def test_load_latest_falls_back_from_corrupt_checkpoint(tmp_path):
     store = _store(tmp_path)
-    valid = Checkpoint(
-        id="cp-valid", task_id="task-1", stage="working", state={"step": 1}
-    )
+    valid = Checkpoint(id="cp-valid", task_id="task-1", stage="working", state={"step": 1})
     await store.save(valid)
 
     corrupt = tmp_path / "task-1" / "cp-corrupt.json"

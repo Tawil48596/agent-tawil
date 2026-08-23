@@ -1,7 +1,5 @@
 """ChromaDB 记忆后端"""
 
-from typing import Optional
-
 
 class ChromaMemoryBackend:
     """ChromaDB 向量记忆存储"""
@@ -11,6 +9,7 @@ class ChromaMemoryBackend:
         self._collection = None
         try:
             import chromadb
+
             self._client = chromadb.PersistentClient(path=path)
             self._collection = self._client.get_or_create_collection(
                 name=collection_name,
@@ -32,24 +31,30 @@ class ChromaMemoryBackend:
     async def search(self, query: str, limit: int = 10, **filters) -> list[dict]:
         if not self._collection:
             return []
-        results = self._collection.query(query_texts=[query], n_results=limit,
-                                           where=filters if filters else None)
+        results = self._collection.query(
+            query_texts=[query], n_results=limit, where=filters if filters else None
+        )
         entries = []
         if results["ids"] and results["ids"][0]:
             for i, mid in enumerate(results["ids"][0]):
-                entries.append({
-                    "id": mid,
-                    "content": results["documents"][0][i] if results["documents"] else "",
-                    "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
-                })
+                entries.append(
+                    {
+                        "id": mid,
+                        "content": results["documents"][0][i] if results["documents"] else "",
+                        "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
+                    }
+                )
         return entries
 
-    async def get(self, entry_id: str) -> Optional[dict]:
+    async def get(self, entry_id: str) -> dict | None:
         if self._collection:
             r = self._collection.get(ids=[entry_id])
             if r["ids"]:
-                return {"id": r["ids"][0], "content": r["documents"][0] if r["documents"] else "",
-                         "metadata": r["metadatas"][0] if r["metadatas"] else {}}
+                return {
+                    "id": r["ids"][0],
+                    "content": r["documents"][0] if r["documents"] else "",
+                    "metadata": r["metadatas"][0] if r["metadatas"] else {},
+                }
         return None
 
     async def delete(self, entry_id: str) -> bool:

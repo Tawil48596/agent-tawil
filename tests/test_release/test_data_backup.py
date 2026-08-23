@@ -17,9 +17,7 @@ def test_backup_round_trip_and_manifest(tmp_path):
 
     assert manifest["schema_version"] == 1
     assert verified["files"][0]["path"] == "data/traces/history.json"
-    assert (tmp_path / "restored/traces/history.json").read_text(
-        encoding="utf-8"
-    ) == "trace"
+    assert (tmp_path / "restored/traces/history.json").read_text(encoding="utf-8") == "trace"
 
 
 def test_backup_rejects_path_traversal(tmp_path):

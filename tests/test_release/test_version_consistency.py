@@ -4,7 +4,6 @@ from pathlib import Path
 
 from shared.version import APP_VERSION
 
-
 ROOT = Path(__file__).parents[2]
 
 

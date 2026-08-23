@@ -1,7 +1,8 @@
 """上下文管理器 — 上下文窗口监控 & 压缩触发"""
 
-import tiktoken
 from typing import Any
+
+import tiktoken
 
 
 class ContextManager:
@@ -26,13 +27,15 @@ class ContextManager:
         total += len(messages) * 4
         return total
 
-    def needs_compression(self, messages: list[dict], context_length: int, threshold: float = 0.75) -> bool:
+    def needs_compression(
+        self, messages: list[dict], context_length: int, threshold: float = 0.75
+    ) -> bool:
         """检查是否需要压缩 (当前使用率 > threshold)"""
         usage = self.count_tokens(messages)
         return usage > context_length * threshold
 
     def get_usage_ratio(self, messages: list[dict], context_length: int) -> float:
-        """返回当前上下文使用率 (0.0 ~ 1.0+) """
+        """返回当前上下文使用率 (0.0 ~ 1.0+)"""
         return self.count_tokens(messages) / context_length
 
     async def compress(
@@ -40,4 +43,5 @@ class ContextManager:
     ) -> list[dict]:
         """压缩上下文: 保留 system + 最近 N 条消息 + 历史摘要"""
         from plugins.agent_engine.compression import compress_messages
+
         return await compress_messages(messages, route_result, keep_recent)

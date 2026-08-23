@@ -17,10 +17,7 @@ def validate_http_url(url: str) -> str:
 
 
 def _resolved_addresses(hostname: str, port: int) -> set[str]:
-    return {
-        item[4][0]
-        for item in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
-    }
+    return {item[4][0] for item in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)}
 
 
 async def require_public_http_url(url: str) -> str:

@@ -15,23 +15,12 @@ class SecurityPlugin(PluginProtocol):
         return "0.1.1"
 
     async def on_load(self, container):
-        from plugins.security.content_filter import ContentFilter
-        from plugins.security.execution_guard import ExecutionGuard
-        from plugins.security.output_guard import OutputGuard
-        from plugins.security.tool_approval import ToolApproval
-
-        config = container.resolve("config") if hasattr(container, "resolve") else {}
-        sec_cfg = config.get("security", {}) if isinstance(config, dict) else {}
-
-        self.content_filter = ContentFilter()
-        self.execution_guard = ExecutionGuard(sec_cfg)
-        self.output_guard = OutputGuard()
-        self.tool_approval = ToolApproval(sec_cfg)
-
-        container.register("ContentFilter", self.content_filter)
-        container.register("ExecutionGuard", self.execution_guard)
-        container.register("OutputGuard", self.output_guard)
-        container.register("ToolApproval", self.tool_approval)
+        if container is None:
+            raise RuntimeError("Security plugin requires the runtime container")
+        self.content_filter = container.resolve("ContentFilter")
+        self.execution_guard = container.resolve("ExecutionGuard")
+        self.output_guard = container.resolve("OutputGuard")
+        self.tool_approval = container.resolve("ToolApproval")
 
     async def on_enable(self):
         pass

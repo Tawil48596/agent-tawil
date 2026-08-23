@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ShieldAlert } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { useChatStore } from "@/stores/chatStore";
@@ -8,25 +8,33 @@ import { InputArea } from "@/components/chat/InputArea";
 
 export function ChatView() {
   const { sessionId } = useParams();
+  const [draft, setDraft] = useState("");
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const {
     selectSession, activeId, streaming, pendingApprovals, loadApprovals, decideApproval,
   } = useChatStore();
 
   useEffect(() => {
     if (sessionId && sessionId !== activeId) selectSession(sessionId);
-  }, [sessionId]);
+  }, [sessionId, activeId, selectSession]);
 
   useEffect(() => {
-    if (!streaming || !activeId) return;
+    if (!activeId) return;
     void loadApprovals();
+    if (!streaming && pendingApprovals.length === 0) return;
     const timer = window.setInterval(() => void loadApprovals(), 750);
     return () => window.clearInterval(timer);
-  }, [streaming, activeId, loadApprovals]);
+  }, [streaming, activeId, pendingApprovals.length, loadApprovals]);
 
   return (
     <div className="flex flex-col h-full">
       <ChatHeader />
-      <MessageList />
+      <MessageList
+        onSuggestion={(suggestion) => {
+          setDraft(suggestion);
+          composerRef.current?.focus();
+        }}
+      />
       <div aria-live="polite" className="mx-auto w-full max-w-4xl px-6">
         {pendingApprovals.map((approval) => (
           <section key={approval.id} className="mb-3 rounded-xl border border-[#fbbf24]/40 bg-[#382b10] p-4 text-[#fde68a] shadow-lg">
@@ -49,7 +57,7 @@ export function ChatView() {
           </section>
         ))}
       </div>
-      <InputArea />
+      <InputArea ref={composerRef} text={draft} onTextChange={setDraft} />
     </div>
   );
 }

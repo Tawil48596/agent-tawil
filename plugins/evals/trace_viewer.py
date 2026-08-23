@@ -2,13 +2,12 @@
 
 import time
 import uuid
-from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import structlog
+
 from shared.versioned_store import (
     UnsupportedSchemaVersion,
     load_collection,
@@ -21,9 +20,9 @@ logger = structlog.get_logger()
 @dataclass
 class TraceSpan:
     span_id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
     trace_id: str = ""
-    type: str = "llm_call"    # llm_call | tool_call | agent_think | rag_retrieval | workflow
+    type: str = "llm_call"  # llm_call | tool_call | agent_think | rag_retrieval | workflow
     name: str = ""
     model: str = ""
     input: dict[str, Any] = field(default_factory=dict)
@@ -31,9 +30,9 @@ class TraceSpan:
     tokens_in: int = 0
     tokens_out: int = 0
     latency_ms: int = 0
-    error: Optional[str] = None
+    error: str | None = None
     start_time: float = field(default_factory=time.time)
-    end_time: Optional[float] = None
+    end_time: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     children: list["TraceSpan"] = field(default_factory=list)
 
@@ -78,7 +77,7 @@ class TraceCollector:
         try:
             payload = load_collection(self._storage_path)
             traces = [self._from_dict(item) for item in payload if isinstance(item, dict)]
-            self._traces = {trace.trace_id: trace for trace in traces[-self._max_traces:]}
+            self._traces = {trace.trace_id: trace for trace in traces[-self._max_traces :]}
         except UnsupportedSchemaVersion:
             raise
         except (OSError, TypeError, ValueError):
@@ -87,12 +86,11 @@ class TraceCollector:
     def _persist(self) -> None:
         if self._storage_path is None:
             return
-        write_collection(
-            self._storage_path, [trace.to_dict() for trace in self._traces.values()]
-        )
+        write_collection(self._storage_path, [trace.to_dict() for trace in self._traces.values()])
 
-    def start_trace(self, name: str = "agent_run", trace_type: str = "workflow",
-                    trace_id: str | None = None) -> TraceSpan:
+    def start_trace(
+        self, name: str = "agent_run", trace_type: str = "workflow", trace_id: str | None = None
+    ) -> TraceSpan:
         """开始一个新的 Trace"""
         trace_id = trace_id or uuid.uuid4().hex[:12]
         root = TraceSpan(
@@ -106,8 +104,14 @@ class TraceCollector:
         self._trim()
         return root
 
-    def add_span(self, parent_span: TraceSpan, span_type: str, name: str,
-                  model: str = "", input_data: dict = None) -> TraceSpan:
+    def add_span(
+        self,
+        parent_span: TraceSpan,
+        span_type: str,
+        name: str,
+        model: str = "",
+        input_data: dict = None,
+    ) -> TraceSpan:
         """添加子 Span"""
         child = TraceSpan(
             parent_id=parent_span.span_id,
@@ -121,9 +125,14 @@ class TraceCollector:
         self._active_spans[child.span_id] = child
         return child
 
-    def end_span(self, span: TraceSpan, output: dict = None,
-                  tokens_in: int = 0, tokens_out: int = 0,
-                  error: str = None):
+    def end_span(
+        self,
+        span: TraceSpan,
+        output: dict = None,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        error: str = None,
+    ):
         """结束 Span"""
         span.output = output or {}
         span.tokens_in = tokens_in
@@ -135,7 +144,7 @@ class TraceCollector:
         if span.parent_id is None:
             self._persist()
 
-    def get_trace(self, trace_id: str) -> Optional[TraceSpan]:
+    def get_trace(self, trace_id: str) -> TraceSpan | None:
         return self._traces.get(trace_id)
 
     def list_traces(
@@ -143,9 +152,9 @@ class TraceCollector:
     ) -> list[dict]:
         traces = sorted(self._traces.values(), key=lambda t: t.start_time, reverse=True)
         traces = [
-            trace for trace in traces
-            if trace.latency_ms >= min_latency_ms
-            and (not error_only or self._has_error(trace))
+            trace
+            for trace in traces
+            if trace.latency_ms >= min_latency_ms and (not error_only or self._has_error(trace))
         ]
         return [
             {
@@ -170,7 +179,7 @@ class TraceCollector:
     def _trim(self):
         if len(self._traces) > self._max_traces:
             oldest = sorted(self._traces.values(), key=lambda trace: trace.start_time)
-            for trace in oldest[:len(self._traces) - self._max_traces]:
+            for trace in oldest[: len(self._traces) - self._max_traces]:
                 del self._traces[trace.trace_id]
 
     def get_stats(self) -> dict:

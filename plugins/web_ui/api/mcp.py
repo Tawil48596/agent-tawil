@@ -20,8 +20,13 @@ async def list_servers(request: Request):
     servers = gw.list_servers()
     return {
         "servers": [
-            {"id": s.id, "name": s.name, "type": s.type,
-             "status": s.status, "tools_count": s.tools_count}
+            {
+                "id": s.id,
+                "name": s.name,
+                "type": s.type,
+                "status": s.status,
+                "tools_count": s.tools_count,
+            }
             for s in servers
         ],
     }
@@ -31,9 +36,13 @@ async def list_servers(request: Request):
 async def add_server(body: ServerAddRequest, request: Request):
     """添加外部 MCP Server"""
     from plugins.mcp_gateway.gateway import MCPServerInfo
+
     gw = request.app.state.mcp_gateway
     info = MCPServerInfo(
-        id=body.id, name=body.name, type=body.type, endpoint=body.endpoint,
+        id=body.id,
+        name=body.name,
+        type=body.type,
+        endpoint=body.endpoint,
     )
     await gw.register_server(info)
     return {"ok": True, "id": body.id}
@@ -53,8 +62,7 @@ async def refresh_server(server_id: str, request: Request):
         info = await request.app.state.mcp_gateway.refresh_server(server_id)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
-    return {"ok": True, "id": info.id, "status": info.status,
-            "tools_count": info.tools_count}
+    return {"ok": True, "id": info.id, "status": info.status, "tools_count": info.tools_count}
 
 
 @router.get("/health")
@@ -73,16 +81,24 @@ async def list_tools(request: Request):
 async def call_tool(tool_name: str, body: dict, request: Request):
     """调用 MCP 工具"""
     gw = request.app.state.mcp_gateway
-    result = await gw.call_tool(tool_name, body.get("arguments", {}),
-                                approved=body.get("approved", False))
+    result = await gw.call_tool(
+        tool_name, body.get("arguments", {}), approved=body.get("approved", False)
+    )
     return result
 
 
 @router.get("/github/search")
-async def github_search(q: str, language: str = "", sort: str = "stars",
-                         limit: int = 10, request: Request = None):
+async def github_search(
+    q: str, language: str = "", sort: str = "stars", limit: int = 10, request: Request = None
+):
     """快捷 GitHub 搜索"""
     gw = request.app.state.mcp_gateway
-    return await gw.call_tool("github_search_repos", {
-        "query": q, "language": language, "sort": sort, "limit": limit,
-    })
+    return await gw.call_tool(
+        "github_search_repos",
+        {
+            "query": q,
+            "language": language,
+            "sort": sort,
+            "limit": limit,
+        },
+    )

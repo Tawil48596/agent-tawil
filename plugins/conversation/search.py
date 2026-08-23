@@ -11,7 +11,7 @@ class ConversationSearch:
 
     def search_messages(self, query: str, limit: int = 20) -> list[dict]:
         """FTS5 全文搜索消息内容"""
-        clean = query.replace('"', '').replace("'", "")
+        clean = query.replace('"', "").replace("'", "")
         fts_query = " OR ".join(f'"{w}"' for w in clean.split() if w)
 
         rows = self._conn.execute(

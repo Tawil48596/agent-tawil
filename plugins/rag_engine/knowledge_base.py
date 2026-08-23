@@ -5,7 +5,6 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 
 def _now() -> str:
@@ -51,10 +50,7 @@ class KnowledgeBaseManager:
         try:
             payload = json.loads(self._storage_path.read_text(encoding="utf-8"))
             for item in payload:
-                documents = [
-                    DocumentRecord(**document)
-                    for document in item.pop("documents", [])
-                ]
+                documents = [DocumentRecord(**document) for document in item.pop("documents", [])]
                 kb = KnowledgeBase(**item, documents=documents)
                 kb.document_count = len(documents)
                 kb.chunk_count = sum(document.chunk_count for document in documents)
@@ -78,7 +74,7 @@ class KnowledgeBaseManager:
         self._persist()
         return kb
 
-    def get(self, kb_id: str) -> Optional[KnowledgeBase]:
+    def get(self, kb_id: str) -> KnowledgeBase | None:
         return self._kbs.get(kb_id)
 
     def update(self, kb_id: str, name: str = None, description: str = None) -> bool:

@@ -13,11 +13,13 @@ async def messaging_webhook(provider: str, request: Request):
 
         async def run_agent(text: str, session_id: str) -> str:
             response = await request.app.state.agent_engine.run(
-                user_message=text, session={"id": session_id, "source": provider})
+                user_message=text, session={"id": session_id, "source": provider}
+            )
             return response.text
 
         return await request.app.state.messaging_gateway.process(
-            provider, event, payload, request.headers.get("x-signature", ""), run_agent)
+            provider, event, payload, request.headers.get("x-signature", ""), run_agent
+        )
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
     except (ValueError, json.JSONDecodeError) as exc:

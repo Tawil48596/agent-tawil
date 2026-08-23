@@ -1,15 +1,21 @@
 """Test Agent Engine"""
 
-import pytest
 from types import SimpleNamespace
+
+import pytest
 
 
 def test_model_router_initialization():
     from plugins.agent_engine.model_router import ModelRouter
+
     config = {
-        "llm": {"default_model": "gpt-4o", "fast_model": "gpt-4o-mini",
-                "providers": {"openai": {"api_key": "test", "base_url": ""}},
-                "model_routing": {}, "fallback_chain": ["openai"]},
+        "llm": {
+            "default_model": "gpt-4o",
+            "fast_model": "gpt-4o-mini",
+            "providers": {"openai": {"api_key": "test", "base_url": ""}},
+            "model_routing": {},
+            "fallback_chain": ["openai"],
+        },
         "agent": {"max_turns": 10},
     }
     router = ModelRouter(config)
@@ -19,11 +25,16 @@ def test_model_router_initialization():
 
 
 def test_route_override():
-    from plugins.agent_engine.model_router import ModelRouter, RouteRequest, TaskType
+    from plugins.agent_engine.model_router import ModelRouter, RouteRequest
+
     config = {
-        "llm": {"default_model": "gpt-4o", "fast_model": "gpt-4o-mini",
-                "providers": {"openai": {"api_key": "test", "base_url": ""}},
-                "model_routing": {}, "fallback_chain": ["openai"]},
+        "llm": {
+            "default_model": "gpt-4o",
+            "fast_model": "gpt-4o-mini",
+            "providers": {"openai": {"api_key": "test", "base_url": ""}},
+            "model_routing": {},
+            "fallback_chain": ["openai"],
+        },
         "agent": {"max_turns": 10},
     }
     router = ModelRouter(config)
@@ -34,11 +45,15 @@ def test_route_override():
 
 def test_task_routing():
     from plugins.agent_engine.model_router import ModelRouter, RouteRequest, TaskType
+
     config = {
-        "llm": {"default_model": "gpt-4o", "fast_model": "gpt-4o-mini",
-                "providers": {"openai": {"api_key": "test", "base_url": ""}},
-                "model_routing": {"summarization": "gpt-4o-mini"},
-                "fallback_chain": ["openai"]},
+        "llm": {
+            "default_model": "gpt-4o",
+            "fast_model": "gpt-4o-mini",
+            "providers": {"openai": {"api_key": "test", "base_url": ""}},
+            "model_routing": {"summarization": "gpt-4o-mini"},
+            "fallback_chain": ["openai"],
+        },
         "agent": {"max_turns": 10},
     }
     router = ModelRouter(config)
@@ -49,6 +64,7 @@ def test_task_routing():
 
 def test_prompt_builder():
     from plugins.agent_engine.prompt_builder import PromptBuilder
+
     pb = PromptBuilder()
     prompt = pb.build_system_prompt(
         session={"id": "test", "title": "Test"},
@@ -61,6 +77,7 @@ def test_prompt_builder():
 
 def test_context_manager():
     from plugins.agent_engine.context_manager import ContextManager
+
     cm = ContextManager()
     msgs = [{"role": "user", "content": "Hello world " * 10}]
     tokens = cm.count_tokens(msgs)
@@ -102,11 +119,13 @@ def test_completion_kwargs_include_tools_and_supported_reasoning_effort():
     kwargs = engine._completion_kwargs(
         route,
         [{"role": "user", "content": "What time is it?"}],
-        [{
-            "name": "get_current_time",
-            "description": "Get the current time",
-            "parameters": {"type": "object", "properties": {}},
-        }],
+        [
+            {
+                "name": "get_current_time",
+                "description": "Get the current time",
+                "parameters": {"type": "object", "properties": {}},
+            }
+        ],
         "high",
     )
 
@@ -167,13 +186,15 @@ def test_deepseek_tools_omit_tool_choice():
 def test_usage_normalization_includes_cache_and_reasoning_tokens():
     from plugins.agent_engine.engine import AgentEngine
 
-    usage = AgentEngine._normalize_usage({
-        "prompt_tokens": 120,
-        "completion_tokens": 30,
-        "total_tokens": 150,
-        "prompt_tokens_details": {"cached_tokens": 80},
-        "completion_tokens_details": {"reasoning_tokens": 12},
-    })
+    usage = AgentEngine._normalize_usage(
+        {
+            "prompt_tokens": 120,
+            "completion_tokens": 30,
+            "total_tokens": 150,
+            "prompt_tokens_details": {"cached_tokens": 80},
+            "completion_tokens_details": {"reasoning_tokens": 12},
+        }
+    )
 
     assert usage == {
         "input_tokens": 120,
@@ -189,12 +210,14 @@ def test_usage_normalization_includes_cache_and_reasoning_tokens():
 def test_usage_normalization_supports_anthropic_cache_fields():
     from plugins.agent_engine.engine import AgentEngine
 
-    usage = AgentEngine._normalize_usage({
-        "input_tokens": 90,
-        "output_tokens": 10,
-        "cache_read_input_tokens": 50,
-        "cache_creation_input_tokens": 20,
-    })
+    usage = AgentEngine._normalize_usage(
+        {
+            "input_tokens": 90,
+            "output_tokens": 10,
+            "cache_read_input_tokens": 50,
+            "cache_creation_input_tokens": 20,
+        }
+    )
 
     assert usage["cached_input_tokens"] == 50
     assert usage["cache_write_input_tokens"] == 20
@@ -208,17 +231,21 @@ async def test_streaming_usage_chunk_is_included_in_done_event(monkeypatch):
 
     async def fake_stream():
         yield SimpleNamespace(
-            choices=[SimpleNamespace(
-                delta=SimpleNamespace(content="hello", tool_calls=None),
-                finish_reason=None,
-            )],
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content="hello", tool_calls=None),
+                    finish_reason=None,
+                )
+            ],
             usage=None,
         )
         yield SimpleNamespace(
-            choices=[SimpleNamespace(
-                delta=SimpleNamespace(content=None, tool_calls=None),
-                finish_reason="stop",
-            )],
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=None, tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
             usage=None,
         )
         yield SimpleNamespace(
@@ -245,11 +272,7 @@ async def test_streaming_usage_chunk_is_included_in_done_event(monkeypatch):
     }
     engine = AgentEngine(ModelRouter(config), {})
 
-    events = [
-        event async for event in engine.run_stream(
-            "hello", override_model="gpt-4o"
-        )
-    ]
+    events = [event async for event in engine.run_stream("hello", override_model="gpt-4o")]
 
     assert events[-1]["type"] == "done"
     assert events[-1]["usage"]["total_tokens"] == 12
@@ -266,28 +289,34 @@ async def test_streaming_deepseek_tool_call_replays_required_fields(monkeypatch)
 
     async def first_stream():
         yield SimpleNamespace(
-            choices=[SimpleNamespace(
-                delta=SimpleNamespace(
-                    content=None,
-                    reasoning_content="I should use the tool.",
-                    tool_calls=[SimpleNamespace(
-                        index=0,
-                        id="call_1",
-                        type=None,
-                        function=SimpleNamespace(name="echo", arguments='{"text":"hi"}'),
-                    )],
-                ),
-                finish_reason="tool_calls",
-            )],
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        content=None,
+                        reasoning_content="I should use the tool.",
+                        tool_calls=[
+                            SimpleNamespace(
+                                index=0,
+                                id="call_1",
+                                type=None,
+                                function=SimpleNamespace(name="echo", arguments='{"text":"hi"}'),
+                            )
+                        ],
+                    ),
+                    finish_reason="tool_calls",
+                )
+            ],
             usage={"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
         )
 
     async def second_stream():
         yield SimpleNamespace(
-            choices=[SimpleNamespace(
-                delta=SimpleNamespace(content="done", reasoning_content=None, tool_calls=None),
-                finish_reason="stop",
-            )],
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content="done", reasoning_content=None, tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
             usage={"prompt_tokens": 10, "completion_tokens": 1, "total_tokens": 11},
         )
 
@@ -316,18 +345,21 @@ async def test_streaming_deepseek_tool_call_replays_required_fields(monkeypatch)
     engine = AgentEngine(ModelRouter(config), {}, dispatcher)
 
     events = [
-        event async for event in engine.run_stream(
+        event
+        async for event in engine.run_stream(
             "echo hi",
             override_model="deepseek-v4-pro",
             reasoning_effort="high",
-            enabled_tools=[{
-                "name": "echo",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"text": {"type": "string"}},
-                    "required": ["text"],
-                },
-            }],
+            enabled_tools=[
+                {
+                    "name": "echo",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"text": {"type": "string"}},
+                        "required": ["text"],
+                    },
+                }
+            ],
         )
     ]
 
@@ -429,10 +461,12 @@ async def test_streaming_failure_moves_to_next_provider(monkeypatch):
 
     async def successful_stream():
         yield SimpleNamespace(
-            choices=[SimpleNamespace(
-                delta=SimpleNamespace(content="recovered", tool_calls=None),
-                finish_reason="stop",
-            )],
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content="recovered", tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
             usage={"prompt_tokens": 4, "completion_tokens": 1, "total_tokens": 5},
         )
 

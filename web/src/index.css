@@ -6,6 +6,10 @@
 html, body, #root { min-height: 100%; }
 body { margin: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0b1020; }
 .app-shell { background: linear-gradient(135deg, #0b1020 0%, #101936 52%, #111729 100%); }
+button, select, textarea, input { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+::selection { background: rgba(138, 167, 255, 0.35); color: #fff; }
+:focus-visible { scroll-margin: 1rem; }
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #32415e; border-radius: 999px; }
@@ -30,3 +34,12 @@ html[data-theme="light"] [class*="text-[#8f9dbc]"],
 html[data-theme="light"] [class*="text-[#9ca9c9]"] { color: #53627a !important; }
 html[data-theme="light"] [class*="border-[#2a2d3a]"],
 html[data-theme="light"] [class*="border-white/10"] { border-color: #cbd5e1 !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

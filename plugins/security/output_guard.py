@@ -30,8 +30,11 @@ class OutputGuard:
         "aws_secret": (r"(?<=AWS_SECRET_ACCESS_KEY=)[^\s]+", "[AWS_SECRET]"),
         "gcp_key": (r"AIza[0-9A-Za-z\-_]{35}", "[GCP_KEY]"),
         # Private Keys
-        "private_key": (r"-----BEGIN\s?(RSA|EC|DSA|OPENSSH|PGP)\s?PRIVATE KEY-----[\s\S]*?-----END\s?\1\s?PRIVATE KEY-----",
-                        "[PRIVATE_KEY]"),
+        "private_key": (
+            r"-----BEGIN\s?(RSA|EC|DSA|OPENSSH|PGP)\s?PRIVATE KEY-----"
+            r"[\s\S]*?-----END\s?\1\s?PRIVATE KEY-----",
+            "[PRIVATE_KEY]",
+        ),
         # Connection strings
         "db_url": (r"(?:postgres|mysql|mongodb|redis)://[^:]+:[^@]+@", "[DB_URL_WITH_CRED]"),
     }
@@ -42,7 +45,10 @@ class OutputGuard:
         "phone_cn": (r"1[3-9]\d{9}", "[PHONE]"),
         "id_card": (r"\d{17}[\dXx]", "[ID_CARD]"),
         "credit_card": (r"\b(?:\d{4}[-\s]?){3}\d{4}\b", "[CREDIT_CARD]"),
-        "ip_addr": (r"\b(?:10|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}\b", "[INTERNAL_IP]"),
+        "ip_addr": (
+            r"\b(?:10|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}\b",
+            "[INTERNAL_IP]",
+        ),
     }
 
     # ── NSFW 关键词 ──

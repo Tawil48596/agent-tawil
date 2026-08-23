@@ -1,7 +1,5 @@
 """标题生成器 — LLM 自动生成会话标题"""
 
-from typing import Optional
-
 
 class Titleizer:
     """LLM 自动生成会话标题"""
@@ -26,7 +24,7 @@ class Titleizer:
         # 去掉常见前缀
         for prefix in ["帮我", "请", "我想", "告诉我", "解释一下", "什么是"]:
             if title.startswith(prefix):
-                title = title[len(prefix):]
+                title = title[len(prefix) :]
         if len(title) > 20:
             title = title[:18] + "…"
         return title.strip() or "新对话"
@@ -38,12 +36,18 @@ class Titleizer:
 
         try:
             from litellm import acompletion
+
             from plugins.agent_engine.model_router import RouteRequest, TaskType
 
             route = self._router.route(RouteRequest(task_type=TaskType.FAST))
             response = await acompletion(
                 model=f"{route.provider}/{route.model}",
-                messages=[{"role": "user", "content": self.TITLE_PROMPT.format(message=first_message[:500])}],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": self.TITLE_PROMPT.format(message=first_message[:500]),
+                    }
+                ],
                 api_key=route.api_key,
                 api_base=route.base_url if route.base_url else None,
                 max_tokens=30,

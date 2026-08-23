@@ -1,17 +1,19 @@
 """代理间通信 — 消息传递协议 + 共享黑板"""
 
+import contextlib
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Callable, Optional
+from enum import StrEnum
+from typing import Any
 
 import structlog
 
 logger = structlog.get_logger()
 
 
-class MessageType(str, Enum):
+class MessageType(StrEnum):
     REQUEST = "request"
     RESPONSE = "response"
     INFORM = "inform"
@@ -23,10 +25,10 @@ class MessageType(str, Enum):
 class AgentMessage:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     sender_id: str = ""
-    receiver_id: str = ""       # "" = broadcast
+    receiver_id: str = ""  # "" = broadcast
     type: MessageType = MessageType.INFORM
     content: dict[str, Any] = field(default_factory=dict)
-    in_reply_to: Optional[str] = None
+    in_reply_to: str | None = None
     timestamp: float = field(default_factory=time.time)
 
 
@@ -50,7 +52,7 @@ class MessageBus:
         """发送消息"""
         self._message_log.append(msg)
         if len(self._message_log) > self._max_log_size:
-            self._message_log = self._message_log[-self._max_log_size:]
+            self._message_log = self._message_log[-self._max_log_size :]
 
         # 定向发送
         if msg.receiver_id and msg.receiver_id in self._subscribers:
@@ -66,16 +68,15 @@ class MessageBus:
         # 广播
         if not msg.receiver_id:
             for handler in self._broadcast_handlers:
-                try:
+                with contextlib.suppress(Exception):
                     await handler(msg) if handler.__code__.co_flags & 0x80 else handler(msg)
-                except Exception:
-                    pass
 
     def get_history(self, agent_id: str = "", limit: int = 50) -> list[AgentMessage]:
         """获取消息历史"""
         if agent_id:
-            return [m for m in self._message_log
-                    if m.sender_id == agent_id or m.receiver_id == agent_id][-limit:]
+            return [
+                m for m in self._message_log if m.sender_id == agent_id or m.receiver_id == agent_id
+            ][-limit:]
         return self._message_log[-limit:]
 
 
@@ -92,10 +93,8 @@ class Blackboard:
         self._versions[key] = self._versions.get(key, 0) + 1
         # 通知 watchers
         for watcher in self._watchers.get(key, []):
-            try:
+            with contextlib.suppress(Exception):
                 watcher(key, value)
-            except Exception:
-                pass
 
     def read(self, key: str, default: Any = None) -> Any:
         return self._data.get(key, default)
@@ -117,10 +116,7 @@ class Blackboard:
 
     def snapshot(self, task_id: str) -> dict:
         """创建任务相关的状态快照"""
-        return {
-            key: val for key, val in self._data.items()
-            if task_id in key
-        }
+        return {key: val for key, val in self._data.items() if task_id in key}
 
     def restore(self, snapshot: dict):
         """从快照恢复"""

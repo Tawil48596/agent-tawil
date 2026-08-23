@@ -1,6 +1,8 @@
 """RAG API — 知识库 + 检索"""
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
+from typing import Annotated
+
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/v1/rag", tags=["rag"])
@@ -48,7 +50,10 @@ async def delete_kb(kb_id: str, request: Request):
 async def index_document(kb_id: str, body: IndexRequest, request: Request):
     try:
         document = await request.app.state.rag_engine.index_document_with_record(
-            kb_id, body.content, body.metadata, body.chunk_strategy,
+            kb_id,
+            body.content,
+            body.metadata,
+            body.chunk_strategy,
         )
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
@@ -60,20 +65,32 @@ async def index_document(kb_id: str, body: IndexRequest, request: Request):
 
 
 @router.post("/knowledge-bases/{kb_id}/upload")
-async def upload_file(kb_id: str, file: UploadFile = File(...), request: Request = None):
+async def upload_file(
+    kb_id: str,
+    file: Annotated[UploadFile, File()],
+    request: Request = None,
+):
     """上传文件并索引"""
     content = await file.read()
     text = content.decode("utf-8", errors="replace")
 
     # Determine chunk strategy based on file extension
     ext = (file.filename or "").lower().split(".")[-1] if file.filename else ""
-    strategy = "code" if ext in ("py", "js", "ts", "go", "rs", "java") else "semantic" if ext in ("md", "rst") else "fixed"
+    strategy = (
+        "code"
+        if ext in ("py", "js", "ts", "go", "rs", "java")
+        else "semantic"
+        if ext in ("md", "rst")
+        else "fixed"
+    )
 
     # Try PDF parsing
     if ext == "pdf":
         try:
             from io import BytesIO
+
             from pypdf import PdfReader
+
             reader = PdfReader(BytesIO(content))
             text = "\n\n".join(page.extract_text() or "" for page in reader.pages)
         except Exception:
@@ -119,7 +136,9 @@ async def delete_document(kb_id: str, document_id: str, request: Request):
 @router.post("/query")
 async def query(body: QueryRequest, request: Request):
     result = await request.app.state.rag_engine.query(
-        body.query, body.knowledge_bases or None, body.top_k,
+        body.query,
+        body.knowledge_bases or None,
+        body.top_k,
     )
     return result
 
@@ -129,7 +148,15 @@ async def list_chunkers():
     return {
         "chunkers": [
             {"id": "fixed", "name": "固定大小", "description": "通用文本, 512 tokens, 10% 重叠"},
-            {"id": "semantic", "name": "语义分块", "description": "按标题/段落, Parent-Child Chunking"},
-            {"id": "code", "name": "代码感知", "description": "Tree-sitter AST 分块, 保留函数签名和 import"},
+            {
+                "id": "semantic",
+                "name": "语义分块",
+                "description": "按标题/段落, Parent-Child Chunking",
+            },
+            {
+                "id": "code",
+                "name": "代码感知",
+                "description": "Tree-sitter AST 分块, 保留函数签名和 import",
+            },
         ]
     }

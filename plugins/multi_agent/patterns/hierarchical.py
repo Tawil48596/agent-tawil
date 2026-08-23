@@ -1,6 +1,6 @@
 """层级协作: 主编排器 → 子编排器 → Worker"""
 
-from typing import Callable
+from collections.abc import Callable
 
 
 class HierarchicalPattern:

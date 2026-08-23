@@ -1,28 +1,27 @@
 """LLM-as-a-Judge 评测引擎 — Pass@1, 工具精准度, 幻觉率"""
 
-import json
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 import structlog
 
 logger = structlog.get_logger()
 
 
-class EvalMetric(str, Enum):
-    PASS_AT_1 = "pass_at_1"          # 首次通过率
-    TOOL_ACCURACY = "tool_accuracy"   # 工具选用精准度
-    HALLUCINATION = "hallucination"   # 幻觉率
-    LATENCY = "latency"              # 延迟
+class EvalMetric(StrEnum):
+    PASS_AT_1 = "pass_at_1"  # 首次通过率
+    TOOL_ACCURACY = "tool_accuracy"  # 工具选用精准度
+    HALLUCINATION = "hallucination"  # 幻觉率
+    LATENCY = "latency"  # 延迟
     TOKEN_EFFICIENCY = "token_efficiency"  # Token 效率
 
 
 @dataclass
 class EvalCase:
     id: str
-    category: str              # reasoning | tool_use | safety | coding
-    input: str                 # 用户输入
+    category: str  # reasoning | tool_use | safety | coding
+    input: str  # 用户输入
     expected: dict = field(default_factory=dict)  # 期望输出
     expected_tools: list[str] = field(default_factory=list)
     forbidden_tools: list[str] = field(default_factory=list)
@@ -70,8 +69,9 @@ Agent 回复:
         self._router = model_router
         self._results: list[EvalResult] = []
 
-    async def evaluate(self, case: EvalCase, agent_response: str,
-                        tool_calls: list[str] = None) -> EvalResult:
+    async def evaluate(
+        self, case: EvalCase, agent_response: str, tool_calls: list[str] = None
+    ) -> EvalResult:
         """评测单个用例"""
         score = 0.0
         details = []
@@ -81,7 +81,9 @@ Agent 回复:
         for kw in case.expected_keywords:
             if kw.lower() in agent_response.lower():
                 kw_matched.append(kw)
-        kw_score = len(kw_matched) / max(len(case.expected_keywords), 1) if case.expected_keywords else 1.0
+        kw_score = (
+            len(kw_matched) / max(len(case.expected_keywords), 1) if case.expected_keywords else 1.0
+        )
         score += kw_score * 0.4
         if kw_matched:
             details.append(f"关键词匹配: {kw_matched}")
@@ -110,19 +112,20 @@ Agent 回复:
 
         passed = score >= 0.7
         result = EvalResult(
-            case_id=case.id, passed=passed, score=score,
+            case_id=case.id,
+            passed=passed,
+            score=score,
             metrics={"kw_score": kw_score, "judge_score": score},
             details="; ".join(details),
         )
         self._results.append(result)
         return result
 
-    async def _llm_judge(self, case: EvalCase, response: str,
-                          tool_calls: list[str] = None) -> float:
+    async def _llm_judge(
+        self, case: EvalCase, response: str, tool_calls: list[str] = None
+    ) -> float:
         """使用 LLM 裁判"""
         try:
-            from litellm import acompletion
-            route = self._router.route.__self__  # simplified
             # 简化版: 返回启发式分数
             score = 0.5
             if any(kw.lower() in response.lower() for kw in case.expected_keywords):
@@ -131,8 +134,7 @@ Agent 回复:
         except Exception:
             return 0.5
 
-    async def evaluate_suite(self, suite: list[EvalCase],
-                              agent_fn) -> dict:
+    async def evaluate_suite(self, suite: list[EvalCase], agent_fn) -> dict:
         """批量评测"""
         results = []
         for case in suite:
@@ -141,8 +143,7 @@ Agent 回复:
                 result = await self.evaluate(case, response, tool_calls)
                 results.append(result)
             except Exception as e:
-                results.append(EvalResult(case_id=case.id, passed=False, score=0.0,
-                                           details=str(e)))
+                results.append(EvalResult(case_id=case.id, passed=False, score=0.0, details=str(e)))
 
         passed = sum(1 for r in results if r.passed)
         avg_score = sum(r.score for r in results) / max(len(results), 1)
@@ -154,8 +155,12 @@ Agent 回复:
             "avg_score": round(avg_score, 3),
             "by_category": self._group_by_category(results),
             "results": [
-                {"id": r.case_id, "passed": r.passed, "score": round(r.score, 3),
-                 "details": r.details}
+                {
+                    "id": r.case_id,
+                    "passed": r.passed,
+                    "score": round(r.score, 3),
+                    "details": r.details,
+                }
                 for r in results
             ],
         }
@@ -169,5 +174,7 @@ Agent 回复:
         return {
             "baseline": {"pass_rate": baseline_results.get("pass_rate", 0)},
             "new": {"pass_rate": new_results.get("pass_rate", 0)},
-            "diff": round(new_results.get("pass_rate", 0) - baseline_results.get("pass_rate", 0), 3),
+            "diff": round(
+                new_results.get("pass_rate", 0) - baseline_results.get("pass_rate", 0), 3
+            ),
         }

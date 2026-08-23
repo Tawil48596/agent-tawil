@@ -24,8 +24,12 @@ class RetrievalGuardrail:
 
         if not filtered:
             self._empty_rounds += 1
-            logger.info("RAG guardrail blocked", query=query[:50],
-                         results_count=len(results), max_score=max(r.score for r in results))
+            logger.info(
+                "RAG guardrail blocked",
+                query=query[:50],
+                results_count=len(results),
+                max_score=max(r.score for r in results),
+            )
             return []
 
         self._empty_rounds = 0

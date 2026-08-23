@@ -1,6 +1,5 @@
 """数据采集器 — 每次 LLM 调用记录"""
 
-import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime

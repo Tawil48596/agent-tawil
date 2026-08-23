@@ -1,8 +1,9 @@
 """配置注册表"""
 
 import os
+import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -10,8 +11,7 @@ import yaml
 class ConfigRegistry:
     """配置注册表 — 从 YAML + 环境变量加载，支持 ${ENV_VAR} 替换"""
 
-    def __init__(self, config_path: str = "config.yaml"):
-        import re
+    def __init__(self, config_path: str = "config.yaml") -> None:
         self._path = Path(config_path)
         self._data: dict[str, Any] = {}
         self._re = re
@@ -22,15 +22,15 @@ class ConfigRegistry:
     def _load(self) -> None:
         raw = self._path.read_text(encoding="utf-8")
 
-        def _replacer(match):
+        def _replacer(match: re.Match[str]) -> str:
             return os.environ.get(match.group(1), match.group(0))
 
         raw = self._re.sub(r"\$\{(\w+)\}", _replacer, raw)
-        self._data = yaml.safe_load(raw) or {}
+        self._data = cast(dict[str, Any], yaml.safe_load(raw) or {})
 
     def get(self, *keys: str, default: Any = None) -> Any:
         """嵌套获取配置: config.get('llm', 'default_model')"""
-        value = self._data
+        value: Any = self._data
         for key in keys:
             if isinstance(value, dict):
                 value = value.get(key)

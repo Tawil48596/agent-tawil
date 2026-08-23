@@ -1,7 +1,6 @@
 """Agent 安全 — 命令审批、敏感信息过滤"""
 
 import re
-from typing import Optional
 
 
 class ContentFilter:
@@ -54,7 +53,7 @@ class ContentFilter:
 class ToolApproval:
     """危险工具审批"""
 
-    def __init__(self, auto_approve_list: Optional[list[str]] = None):
+    def __init__(self, auto_approve_list: list[str] | None = None):
         self._auto_approve = set(auto_approve_list or [])
         self._pending: dict[str, bool] = {}
 

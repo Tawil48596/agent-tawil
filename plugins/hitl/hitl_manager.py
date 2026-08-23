@@ -1,29 +1,31 @@
 """HITL — Human-in-the-Loop 人机协作中断管理器"""
 
 import asyncio
+import contextlib
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Callable, Optional
+from enum import StrEnum
+from typing import Any
 
 import structlog
 
 logger = structlog.get_logger()
 
 
-class HITLStatus(str, Enum):
+class HITLStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     DENIED = "denied"
-    EDITED = "edited"       # 用户修改后放行
+    EDITED = "edited"  # 用户修改后放行
     TIMEOUT = "timeout"
 
 
-class HITLType(str, Enum):
-    APPROVAL = "approval"    # 审批确认
-    EDIT = "edit"            # 允许编辑状态
-    CONFIRM = "confirm"      # 二次确认
+class HITLType(StrEnum):
+    APPROVAL = "approval"  # 审批确认
+    EDIT = "edit"  # 允许编辑状态
+    CONFIRM = "confirm"  # 二次确认
 
 
 @dataclass
@@ -39,7 +41,7 @@ class HITLRequest:
     status: HITLStatus = HITLStatus.PENDING
     timeout: int = 300
     created_at: float = field(default_factory=time.time)
-    resolved_at: Optional[float] = None
+    resolved_at: float | None = None
     user_edits: dict[str, Any] = field(default_factory=dict)
 
 
@@ -61,11 +63,16 @@ class HITLManager:
 
     # ── 发起请求 ──
 
-    async def request(self, session_id: str, hitl_type: HITLType,
-                       title: str, description: str,
-                       proposed_action: dict = None,
-                       agent_state: dict = None,
-                       timeout: int = None) -> HITLRequest:
+    async def request(
+        self,
+        session_id: str,
+        hitl_type: HITLType,
+        title: str,
+        description: str,
+        proposed_action: dict = None,
+        agent_state: dict = None,
+        timeout: int = None,
+    ) -> HITLRequest:
         """发起 HITL 请求 — Agent 在此挂起等待"""
         req = HITLRequest(
             session_id=session_id,
@@ -81,10 +88,8 @@ class HITLManager:
 
         # 通知前端/回调
         for cb in self._on_request_callbacks:
-            try:
+            with contextlib.suppress(Exception):
                 await cb(req)
-            except Exception:
-                pass
 
         # 等待审批
         try:
@@ -92,7 +97,7 @@ class HITLManager:
                 self._wait_for_resolution(req.id),
                 timeout=req.timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             req.status = HITLStatus.TIMEOUT
             req.resolved_at = time.time()
 
@@ -146,7 +151,7 @@ class HITLManager:
             pending = [r for r in pending if r.session_id == session_id]
         return pending
 
-    def get_request(self, req_id: str) -> Optional[HITLRequest]:
+    def get_request(self, req_id: str) -> HITLRequest | None:
         return self._requests.get(req_id)
 
     def on_request(self, callback: Callable):

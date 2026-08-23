@@ -1,28 +1,29 @@
 """模型路由器 — 多 Provider 管理、任务路由、降级链、per-message 模型覆盖"""
 
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 import structlog
 
 logger = structlog.get_logger()
 
 
-class TaskType(str, Enum):
-    REASONING = "reasoning"       # 通用推理
-    CODING = "coding"             # 代码生成/审查
+class TaskType(StrEnum):
+    REASONING = "reasoning"  # 通用推理
+    CODING = "coding"  # 代码生成/审查
     SUMMARIZATION = "summarization"  # 摘要/压缩
-    EMBEDDING = "embedding"       # 文本嵌入
-    VISION = "vision"             # 图像理解
-    FAST = "fast"                 # 快速响应 (小模型)
+    EMBEDDING = "embedding"  # 文本嵌入
+    VISION = "vision"  # 图像理解
+    FAST = "fast"  # 快速响应 (小模型)
 
 
 @dataclass
 class ModelInfo:
     """模型元信息"""
-    name: str                     # gpt-4o / claude-sonnet-4 / deepseek-v3
-    provider: str                 # openai / anthropic / deepseek
+
+    name: str  # gpt-4o / claude-sonnet-4 / deepseek-v3
+    provider: str  # openai / anthropic / deepseek
     context_length: int
     supports_vision: bool = False
     supports_tools: bool = True
@@ -35,18 +36,20 @@ class ModelInfo:
 @dataclass
 class RouteRequest:
     """路由请求"""
+
     task_type: TaskType = TaskType.REASONING
-    override_model: Optional[str] = None   # 用户强制指定模型 (per-message)
-    prefer_provider: Optional[str] = None  # 用户偏好 Provider
+    override_model: str | None = None  # 用户强制指定模型 (per-message)
+    prefer_provider: str | None = None  # 用户偏好 Provider
     prefer_fast: bool = False
     prefer_vision: bool = False
-    max_context_needed: int = 8192         # 需要的上下文长度
+    max_context_needed: int = 8192  # 需要的上下文长度
     excluded_providers: set[str] = field(default_factory=set)
 
 
 @dataclass
 class RouteResult:
     """路由结果"""
+
     model: str
     provider: str
     api_key: str
@@ -76,7 +79,9 @@ class ModelRouter:
         self._fallback_chain: list[str] = config.get("llm", {}).get("fallback_chain", [])
         self._default_model = config.get("llm", {}).get("default_model", "gpt-4o")
         self._fast_model = config.get("llm", {}).get("fast_model", "gpt-4o-mini")
-        self._embedding_model = config.get("llm", {}).get("embedding_model", "text-embedding-3-small")
+        self._embedding_model = config.get("llm", {}).get(
+            "embedding_model", "text-embedding-3-small"
+        )
         self._task_map: dict[TaskType, str] = {}  # task_type → default model
 
         self._load_from_config(config)
@@ -97,60 +102,102 @@ class ModelRouter:
             }
 
         # 内置模型注册表
-        self._register_model(ModelInfo(
-            name="gpt-5.1", provider="openai",
-            context_length=400000, supports_vision=True,
-            supports_reasoning_effort=True,
-            tags={"reasoning", "coding", "vision"},
-        ))
-        self._register_model(ModelInfo(
-            name="gpt-5-mini", provider="openai",
-            context_length=400000, supports_vision=True,
-            supports_reasoning_effort=True,
-            tags={"reasoning", "coding", "summarization", "fast"},
-        ))
-        self._register_model(ModelInfo(
-            name="gpt-4o", provider="openai",
-            context_length=128000, supports_vision=True,
-            cost_per_1k_input=0.0025, cost_per_1k_output=0.01,
-            tags={"reasoning", "coding", "vision", "fast"},
-        ))
-        self._register_model(ModelInfo(
-            name="gpt-4o-mini", provider="openai",
-            context_length=128000, supports_vision=True,
-            cost_per_1k_input=0.00015, cost_per_1k_output=0.0006,
-            tags={"reasoning", "summarization", "fast"},
-        ))
-        self._register_model(ModelInfo(
-            name="claude-sonnet-4", provider="anthropic",
-            context_length=200000, supports_vision=True,
-            cost_per_1k_input=0.003, cost_per_1k_output=0.015,
-            tags={"reasoning", "coding", "vision"},
-        ))
-        self._register_model(ModelInfo(
-            name="claude-haiku-4-5", provider="anthropic",
-            context_length=200000, supports_vision=True,
-            cost_per_1k_input=0.0008, cost_per_1k_output=0.004,
-            tags={"reasoning", "summarization", "fast"},
-        ))
-        self._register_model(ModelInfo(
-            name="deepseek-v4-pro", provider="deepseek",
-            context_length=1000000, supports_vision=False,
-            supports_reasoning_effort=True,
-            cost_per_1k_input=0.00014, cost_per_1k_output=0.00028,
-            tags={"reasoning", "coding"},
-        ))
-        self._register_model(ModelInfo(
-            name="deepseek-v4-flash", provider="deepseek",
-            context_length=1000000, supports_vision=False,
-            supports_reasoning_effort=True,
-            tags={"reasoning", "coding", "summarization", "fast"},
-        ))
-        self._register_model(ModelInfo(
-            name="text-embedding-3-small", provider="openai",
-            context_length=8191, supports_vision=False, supports_tools=False,
-            tags={"embedding"},
-        ))
+        self._register_model(
+            ModelInfo(
+                name="gpt-5.1",
+                provider="openai",
+                context_length=400000,
+                supports_vision=True,
+                supports_reasoning_effort=True,
+                tags={"reasoning", "coding", "vision"},
+            )
+        )
+        self._register_model(
+            ModelInfo(
+                name="gpt-5-mini",
+                provider="openai",
+                context_length=400000,
+                supports_vision=True,
+                supports_reasoning_effort=True,
+                tags={"reasoning", "coding", "summarization", "fast"},
+            )
+        )
+        self._register_model(
+            ModelInfo(
+                name="gpt-4o",
+                provider="openai",
+                context_length=128000,
+                supports_vision=True,
+                cost_per_1k_input=0.0025,
+                cost_per_1k_output=0.01,
+                tags={"reasoning", "coding", "vision", "fast"},
+            )
+        )
+        self._register_model(
+            ModelInfo(
+                name="gpt-4o-mini",
+                provider="openai",
+                context_length=128000,
+                supports_vision=True,
+                cost_per_1k_input=0.00015,
+                cost_per_1k_output=0.0006,
+                tags={"reasoning", "summarization", "fast"},
+            )
+        )
+        self._register_model(
+            ModelInfo(
+                name="claude-sonnet-4",
+                provider="anthropic",
+                context_length=200000,
+                supports_vision=True,
+                cost_per_1k_input=0.003,
+                cost_per_1k_output=0.015,
+                tags={"reasoning", "coding", "vision"},
+            )
+        )
+        self._register_model(
+            ModelInfo(
+                name="claude-haiku-4-5",
+                provider="anthropic",
+                context_length=200000,
+                supports_vision=True,
+                cost_per_1k_input=0.0008,
+                cost_per_1k_output=0.004,
+                tags={"reasoning", "summarization", "fast"},
+            )
+        )
+        self._register_model(
+            ModelInfo(
+                name="deepseek-v4-pro",
+                provider="deepseek",
+                context_length=1000000,
+                supports_vision=False,
+                supports_reasoning_effort=True,
+                cost_per_1k_input=0.00014,
+                cost_per_1k_output=0.00028,
+                tags={"reasoning", "coding"},
+            )
+        )
+        self._register_model(
+            ModelInfo(
+                name="deepseek-v4-flash",
+                provider="deepseek",
+                context_length=1000000,
+                supports_vision=False,
+                supports_reasoning_effort=True,
+                tags={"reasoning", "coding", "summarization", "fast"},
+            )
+        )
+        self._register_model(
+            ModelInfo(
+                name="text-embedding-3-small",
+                provider="openai",
+                context_length=8191,
+                supports_vision=False,
+                supports_tools=False,
+                tags={"embedding"},
+            )
+        )
 
         # 任务 → 默认模型映射
         routing_cfg = {
@@ -220,7 +267,8 @@ class ModelRouter:
     def list_available_models(self) -> list[str]:
         """列出当前可用（已配置 API Key）的模型名"""
         return [
-            name for name, info in self._models.items()
+            name
+            for name, info in self._models.items()
             if self._has_usable_key(self._providers.get(info.provider, {}))
         ]
 
@@ -279,9 +327,8 @@ class ModelRouter:
 
         # 6. 降级链
         for provider_name in self._fallback_chain:
-            if (
-                provider_name not in excluded_providers
-                and self._has_usable_key(self._providers.get(provider_name, {}))
+            if provider_name not in excluded_providers and self._has_usable_key(
+                self._providers.get(provider_name, {})
             ):
                 fallback_model = self._find_model_by_provider(
                     request.task_type,
@@ -320,23 +367,27 @@ class ModelRouter:
         task_type: TaskType,
         provider: str,
         *,
-        excluded_providers: Optional[set[str]] = None,
-    ) -> Optional[str]:
+        excluded_providers: set[str] | None = None,
+    ) -> str | None:
         """在指定 Provider 下找适合任务的模型"""
         if provider in (excluded_providers or set()):
             return None
         for name, info in self._models.items():
-            if info.provider == provider and self._has_usable_key(self._providers.get(provider, {})):
-                # 检查标签匹配
-                if task_type.value in info.tags:
-                    return name
+            if (
+                info.provider == provider
+                and self._has_usable_key(self._providers.get(provider, {}))
+                and task_type.value in info.tags
+            ):
+                return name
         # 退而求其次
         for name, info in self._models.items():
-            if info.provider == provider and self._has_usable_key(self._providers.get(provider, {})):
+            if info.provider == provider and self._has_usable_key(
+                self._providers.get(provider, {})
+            ):
                 return name
         return None
 
-    def _find_vision_model(self, excluded_providers: Optional[set[str]] = None) -> Optional[str]:
+    def _find_vision_model(self, excluded_providers: set[str] | None = None) -> str | None:
         excluded_providers = excluded_providers or set()
         for name, info in self._models.items():
             if (

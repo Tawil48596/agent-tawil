@@ -1,7 +1,5 @@
 """仪表板数据 API"""
 
-from typing import Optional
-
 
 class DashboardService:
     """仪表板数据服务"""

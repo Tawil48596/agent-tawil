@@ -1,6 +1,10 @@
 import pytest
 
-from core.event_bus import Event, EventBus
+from core.event_bus import SESSION_UPDATED, Event, EventBus
+
+
+def test_session_update_event_name_is_stable():
+    assert SESSION_UPDATED == "session.updated"
 
 
 @pytest.mark.asyncio

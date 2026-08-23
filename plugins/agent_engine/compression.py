@@ -56,7 +56,10 @@ async def _summarize(messages: list[dict], route_result: Any) -> str:
             messages=[
                 {
                     "role": "system",
-                    "content": "请用 3-5 句话简要总结以下对话的关键信息和决策。只输出摘要，不要加任何前缀。",
+                    "content": (
+                        "请用 3-5 句话简要总结以下对话的关键信息和决策。"
+                        "只输出摘要，不要加任何前缀。"
+                    ),
                 },
                 {"role": "user", "content": text},
             ],

@@ -2,12 +2,12 @@
 
 import asyncio
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Callable, Optional
+from enum import StrEnum
 
 
-class ApprovalStatus(str, Enum):
+class ApprovalStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     DENIED = "denied"
@@ -54,6 +54,7 @@ class ToolApproval:
     ) -> ApprovalRequest:
         """发起审批请求，挂起等待"""
         import uuid
+
         req_id = uuid.uuid4().hex[:8]
         req = ApprovalRequest(
             id=req_id,
@@ -75,7 +76,7 @@ class ToolApproval:
                 self._wait_for_decision(req_id),
                 timeout=self._default_timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             req.status = ApprovalStatus.TIMEOUT
             self._pending.pop(req_id, None)
 
@@ -123,6 +124,7 @@ class ToolApproval:
         """发送 Webhook 通知"""
         try:
             import httpx
+
             async with httpx.AsyncClient() as client:
                 await client.post(
                     self._webhook_url,

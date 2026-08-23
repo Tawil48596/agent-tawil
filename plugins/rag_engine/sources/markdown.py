@@ -12,7 +12,16 @@ class MarkdownSource:
             return []
 
         content = path.read_text(encoding="utf-8", errors="replace")
-        return [{"content": content, "metadata": {"source": str(path.absolute()), "type": "markdown", "filename": path.name}}]
+        return [
+            {
+                "content": content,
+                "metadata": {
+                    "source": str(path.absolute()),
+                    "type": "markdown",
+                    "filename": path.name,
+                },
+            }
+        ]
 
     async def fetch_directory(self, dir_path: str, recursive: bool = True) -> list[dict]:
         path = Path(dir_path)

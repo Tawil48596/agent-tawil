@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 
-class UnsupportedSchemaVersion(ValueError):
+class UnsupportedSchemaVersion(ValueError):  # noqa: N818  # public compatibility name
     pass
 
 

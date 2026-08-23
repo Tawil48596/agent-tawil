@@ -72,7 +72,6 @@ def test_api_key_digests_are_keyed_per_manager():
     """The same credential must not have a reusable, global digest."""
     first = APIKeyManager()
     second = APIKeyManager()
+    credential = "sk-" + "fixed-regression-value"
 
-    assert first._hash("sk-fixed-regression-value") != second._hash(
-        "sk-fixed-regression-value"
-    )
+    assert first._hash(credential) != second._hash(credential)

@@ -5,16 +5,23 @@ from core.protocols import PluginProtocol
 
 class ObservabilityPlugin(PluginProtocol):
     @property
-    def name(self) -> str: return "observability"
+    def name(self) -> str:
+        return "observability"
+
     @property
-    def version(self) -> str: return "0.1.1"
+    def version(self) -> str:
+        return "0.1.1"
 
     async def on_load(self, container):
-        from plugins.observability.tracing import TracingManager
-        from plugins.observability.health_check import HealthChecker
-        from plugins.observability.metrics import MetricsCollector
-        self.tracing = TracingManager()
-        self.health = HealthChecker()
-        self.metrics = MetricsCollector()
-        container.register("TracingManager", self.tracing)
-        container.register("HealthChecker", self.health)
+        if container is None:
+            raise RuntimeError("Observability plugin requires the runtime container")
+        self.metrics = container.resolve("MetricsCollector")
+        self.traces = container.resolve("TraceCollector")
+        self.audit = container.resolve("AuditLog")
+
+    def get_extensions(self):
+        return {"metrics": self.metrics, "traces": self.traces, "audit": self.audit}
+
+
+def create_plugin() -> ObservabilityPlugin:
+    return ObservabilityPlugin()

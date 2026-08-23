@@ -1,7 +1,5 @@
 """重排序器 — Cross-Encoder 精排 + 轻量回退"""
 
-from typing import Optional
-
 
 class Reranker:
     """重排序器
@@ -14,8 +12,7 @@ class Reranker:
         self._model_name = model_name
         self._cross_encoder = None
 
-    async def rerank(self, query: str, results: list,
-                      top_k: int = 5) -> list:
+    async def rerank(self, query: str, results: list, top_k: int = 5) -> list:
         """重排序结果列表"""
         if not results:
             return []
@@ -29,7 +26,7 @@ class Reranker:
         """Cross-Encoder 精排 (需模型)"""
         pairs = [(query, r.content) for r in results]
         scores = self._cross_encoder.predict(pairs)
-        for r, s in zip(results, scores):
+        for r, s in zip(results, scores, strict=False):
             r.score = float(s)
         return sorted(results, key=lambda x: x.score, reverse=True)[:top_k]
 

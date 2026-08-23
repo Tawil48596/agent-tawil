@@ -103,7 +103,7 @@ export function Settings() {
     <div className="p-6 h-full overflow-y-auto">
       <h2 className="text-lg font-semibold flex items-center gap-2 mb-6"><SettingsIcon size={20} /> 设置</h2>
 
-      <div className="flex gap-2 mb-6">
+      <div className="mb-6 flex flex-wrap gap-2">
         {[
           { id: "profile", icon: User, label: "用户偏好" },
           { id: "models", icon: Cpu, label: "模型配置" },
@@ -119,16 +119,16 @@ export function Settings() {
       {tab === "profile" && (
         <div className="max-w-lg space-y-4">
           <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
-            <label className="text-sm font-medium block mb-2">界面主题</label>
-            <select value={theme} onChange={(e) => setTheme(e.target.value)}
+            <label htmlFor="interface-theme" className="text-sm font-medium block mb-2">界面主题</label>
+            <select id="interface-theme" value={theme} onChange={(e) => setTheme(e.target.value)}
               className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-4 py-2.5 text-sm text-[#e1e4ea]">
               <option value="dark">暗色</option>
               <option value="light">亮色</option>
             </select>
           </div>
           <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
-            <label className="text-sm font-medium block mb-2">默认模型</label>
-            <select value={model} onChange={(e) => { setModel(e.target.value); setNotice("默认模型已保存"); }}
+            <label htmlFor="default-model" className="text-sm font-medium block mb-2">默认模型</label>
+            <select id="default-model" value={model} onChange={(e) => { setModel(e.target.value); setNotice("默认模型已保存"); }}
               className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-4 py-2.5 text-sm text-[#e1e4ea]">
               <option value="">自动路由</option>
               {models.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
@@ -160,8 +160,9 @@ export function Settings() {
                 </div>
 
                 {/* API URL */}
-                <label className="text-xs text-[#8b8fa3] mb-1 block">API URL</label>
+                <label htmlFor={`${p.name}-api-url`} className="text-xs text-[#8b8fa3] mb-1 block">API URL</label>
                 <input
+                  id={`${p.name}-api-url`}
                   type="text"
                   value={getEditVal(p.name, "url")}
                   onChange={(e) => setEditVal(p.name, "url", e.target.value)}
@@ -170,17 +171,18 @@ export function Settings() {
                 />
 
                 {/* API Key */}
-                <label className="text-xs text-[#8b8fa3] mb-1 block">API Key</label>
+                <label htmlFor={`${p.name}-api-key`} className="text-xs text-[#8b8fa3] mb-1 block">API Key</label>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <input
+                      id={`${p.name}-api-key`}
                       type={showKeys[p.name] ? "text" : "password"}
                       value={getEditVal(p.name, "key")}
                       onChange={(e) => setEditVal(p.name, "key", e.target.value)}
                       placeholder="sk-..."
                       className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg pl-4 pr-10 py-2.5 text-sm text-[#e1e4ea] outline-none focus:border-[#6c8cff]"
                     />
-                    <button onClick={() => setShowKeys(prev => ({ ...prev, [p.name]: !prev[p.name] }))}
+                    <button type="button" aria-label={`${showKeys[p.name] ? "隐藏" : "显示"} ${p.name} API Key`} onClick={() => setShowKeys(prev => ({ ...prev, [p.name]: !prev[p.name] }))}
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8b8fa3]">
                       {showKeys[p.name] ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>

@@ -90,30 +90,36 @@ async def test_memory_metadata_filters_updates_and_scoped_clear(tmp_path):
         },
     }
     memory = LongTermMemory(config)
-    project_a_id = await memory.save(MemoryEntry(
-        id="",
-        content="Use PostgreSQL for production",
-        source="conversation",
-        source_session="session-a",
-        user_id="user-a",
-        project_id="project-a",
-        tags=["database"],
-        confidence=0.9,
-    ))
-    duplicate_id = await memory.save(MemoryEntry(
-        id="",
-        content="  use PostgreSQL for production  ",
-        user_id="user-a",
-        project_id="project-a",
-        importance=0.8,
-    ))
-    await memory.save(MemoryEntry(
-        id="",
-        content="Use SQLite for prototypes",
-        source="manual",
-        user_id="user-a",
-        project_id="project-b",
-    ))
+    project_a_id = await memory.save(
+        MemoryEntry(
+            id="",
+            content="Use PostgreSQL for production",
+            source="conversation",
+            source_session="session-a",
+            user_id="user-a",
+            project_id="project-a",
+            tags=["database"],
+            confidence=0.9,
+        )
+    )
+    duplicate_id = await memory.save(
+        MemoryEntry(
+            id="",
+            content="  use PostgreSQL for production  ",
+            user_id="user-a",
+            project_id="project-a",
+            importance=0.8,
+        )
+    )
+    await memory.save(
+        MemoryEntry(
+            id="",
+            content="Use SQLite for prototypes",
+            source="manual",
+            user_id="user-a",
+            project_id="project-b",
+        )
+    )
 
     isolated = await memory.search(
         "production",

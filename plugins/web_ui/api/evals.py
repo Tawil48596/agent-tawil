@@ -23,10 +23,7 @@ async def run_suite(name: str, request: Request):
         resp = await engine.run(user_message=input_text)
         return {
             "text": resp.text,
-            "tools": [
-                call.get("function", {}).get("name", "")
-                for call in resp.tool_calls
-            ],
+            "tools": [call.get("function", {}).get("name", "") for call in resp.tool_calls],
             "usage": resp.usage,
         }
 
@@ -37,9 +34,7 @@ async def run_suite(name: str, request: Request):
 @router.get("/history")
 async def eval_history(request: Request, suite: str | None = None, limit: int = 50):
     limit = min(max(limit, 1), 200)
-    return {
-        "history": request.app.state.eval_runner.get_history(suite=suite, limit=limit)
-    }
+    return {"history": request.app.state.eval_runner.get_history(suite=suite, limit=limit)}
 
 
 # ── Trace ──
@@ -54,9 +49,7 @@ async def list_traces(
 ):
     collector = request.app.state.trace_collector
     return {
-        "traces": collector.list_traces(
-            min(max(limit, 1), 200), error_only, max(min_latency_ms, 0)
-        )
+        "traces": collector.list_traces(min(max(limit, 1), 200), error_only, max(min_latency_ms, 0))
     }
 
 

@@ -1,6 +1,5 @@
 """数据库 MCP 适配器"""
 
-import json
 import sqlite3
 from pathlib import Path
 
@@ -13,12 +12,39 @@ class DatabaseMCPAdapter:
 
     def list_tools(self) -> list[dict]:
         return [
-            {"name": "db_query", "description": "执行只读 SQL 查询",
-             "inputSchema": {"type": "object", "properties": {"sql": {"type": "string"}, "db_path": {"type": "string", "default": ""}}, "required": ["sql"]}},
-            {"name": "db_list_tables", "description": "列出所有表",
-             "inputSchema": {"type": "object", "properties": {"db_path": {"type": "string", "default": ""}}, "required": []}},
-            {"name": "db_describe", "description": "查看表结构",
-             "inputSchema": {"type": "object", "properties": {"table": {"type": "string"}, "db_path": {"type": "string", "default": ""}}, "required": ["table"]}},
+            {
+                "name": "db_query",
+                "description": "执行只读 SQL 查询",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "sql": {"type": "string"},
+                        "db_path": {"type": "string", "default": ""},
+                    },
+                    "required": ["sql"],
+                },
+            },
+            {
+                "name": "db_list_tables",
+                "description": "列出所有表",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"db_path": {"type": "string", "default": ""}},
+                    "required": [],
+                },
+            },
+            {
+                "name": "db_describe",
+                "description": "查看表结构",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "table": {"type": "string"},
+                        "db_path": {"type": "string", "default": ""},
+                    },
+                    "required": ["table"],
+                },
+            },
         ]
 
     async def call_tool(self, name: str, arguments: dict) -> dict:
@@ -49,7 +75,10 @@ class DatabaseMCPAdapter:
     async def _tool_db_list_tables(self, db_path: str = "") -> dict:
         path = self._get_path(db_path)
         conn = sqlite3.connect(path)
-        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        tables = [
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        ]
         conn.close()
         return {"tables": tables}
 

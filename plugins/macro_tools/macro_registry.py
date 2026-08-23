@@ -1,9 +1,8 @@
 """宏工具注册与执行 — 批量依赖调用打包 + 自动发现"""
 
-import asyncio
 import inspect
 from collections import defaultdict
-from typing import Any, Callable, Optional
+from collections.abc import Callable
 
 import structlog
 
@@ -13,8 +12,7 @@ logger = structlog.get_logger()
 class MacroTool:
     """宏工具 — 多步依赖调用打包"""
 
-    def __init__(self, name: str, description: str, steps: list[str],
-                 executor: Callable):
+    def __init__(self, name: str, description: str, steps: list[str], executor: Callable):
         self.name = name
         self.description = description
         self.steps = steps  # 依赖的工具名列表
@@ -37,17 +35,20 @@ class MacroRegistry:
 
     # ── 注册 ──
 
-    def register(self, name: str, description: str, steps: list[str],
-                 executor: Callable):
+    def register(self, name: str, description: str, steps: list[str], executor: Callable):
         macro = MacroTool(name, description, steps, executor)
         self._macros[name] = macro
         logger.info("Macro registered", name=name, steps=steps)
 
     def list_all(self) -> list[dict]:
         return [
-            {"name": m.name, "description": m.description,
-             "steps": m.steps, "call_count": m.call_count,
-             "avg_latency_ms": round(m.avg_latency_ms, 1)}
+            {
+                "name": m.name,
+                "description": m.description,
+                "steps": m.steps,
+                "call_count": m.call_count,
+                "avg_latency_ms": round(m.avg_latency_ms, 1),
+            }
             for m in self._macros.values()
         ]
 
@@ -60,6 +61,7 @@ class MacroRegistry:
             return {"error": f"Unknown macro: {name}"}
 
         import time
+
         start = time.time()
 
         try:
@@ -89,11 +91,13 @@ class MacroRegistry:
         for seq_key, count in self._sequence_counter.items():
             if count >= min_frequency:
                 tool_names = seq_key.split("→")
-                suggestions.append({
-                    "sequence": tool_names,
-                    "frequency": count,
-                    "suggested_name": "_".join(tool_names).replace("-", "_"),
-                })
+                suggestions.append(
+                    {
+                        "sequence": tool_names,
+                        "frequency": count,
+                        "suggested_name": "_".join(tool_names).replace("-", "_"),
+                    }
+                )
         return sorted(suggestions, key=lambda x: x["frequency"], reverse=True)[:5]
 
     def get_stats(self) -> dict:
@@ -108,29 +112,41 @@ class MacroRegistry:
 # ── 内置宏工具 ──
 
 
-async def macro_repo_explore(tool_dispatcher, owner: str, repo: str,
-                              target_path: str = "") -> dict:
+async def macro_repo_explore(tool_dispatcher, owner: str, repo: str, target_path: str = "") -> dict:
     """list_files → read_file 自动串联"""
-    files = await tool_dispatcher._execute_one({
-        "function": {"name": "github_list_files",
-                      "arguments": f'{{"owner": "{owner}", "repo": "{repo}", "path": "{target_path}"}}'}
-    })
+    files = await tool_dispatcher._execute_one(
+        {
+            "function": {
+                "name": "github_list_files",
+                "arguments": f'{{"owner": "{owner}", "repo": "{repo}", "path": "{target_path}"}}',
+            }
+        }
+    )
     file_list = files.get("output", "[]")
     import json
+
     try:
         items = json.loads(file_list) if isinstance(file_list, str) else file_list
         items = items.get("items", []) if isinstance(items, dict) else []
     except json.JSONDecodeError:
         items = []
 
-    key_files = [f for f in items if isinstance(f, dict) and
-                 (f.get("name", "").endswith((".py", ".md", ".toml", ".yaml", ".json")))]
+    key_files = [
+        f
+        for f in items
+        if isinstance(f, dict)
+        and (f.get("name", "").endswith((".py", ".md", ".toml", ".yaml", ".json")))
+    ]
     contents = {}
     for f in key_files[:5]:
-        result = await tool_dispatcher._execute_one({
-            "function": {"name": "github_read_file",
-                          "arguments": f'{{"owner": "{owner}", "repo": "{repo}", "path": "{f["path"]}"}}'}
-        })
+        result = await tool_dispatcher._execute_one(
+            {
+                "function": {
+                    "name": "github_read_file",
+                    "arguments": f'{{"owner": "{owner}", "repo": "{repo}", "path": "{f["path"]}"}}',
+                }
+            }
+        )
         contents[f["path"]] = result.get("output", "")[:1000]
 
     return {"structure": {"items": items[:20]}, "key_files": contents}

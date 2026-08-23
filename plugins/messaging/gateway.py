@@ -5,9 +5,10 @@ import hmac
 import json
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -20,11 +21,14 @@ class InboundMessage:
 
 
 class MessagingGateway:
-    def __init__(self, config: dict | None = None,
-                 state_path: str | Path = "data/messaging/sessions.json"):
+    def __init__(
+        self, config: dict | None = None, state_path: str | Path = "data/messaging/sessions.json"
+    ):
         cfg = config or {}
         self._secrets = cfg.get("webhook_secrets", {})
-        self._allowed = {name: set(values) for name, values in cfg.get("allowed_senders", {}).items()}
+        self._allowed = {
+            name: set(values) for name, values in cfg.get("allowed_senders", {}).items()
+        }
         self._state_path = Path(state_path)
         self._sessions: dict[str, str] = {}
         self._seen: dict[str, float] = {}
@@ -54,16 +58,30 @@ class MessagingGateway:
     def normalize(self, provider: str, event: dict[str, Any]) -> InboundMessage:
         if provider == "telegram":
             message = event.get("message", {})
-            return InboundMessage(provider, str(event.get("update_id", "")),
-                str(message.get("chat", {}).get("id", "")), str(message.get("from", {}).get("id", "")),
-                message.get("text", ""))
+            return InboundMessage(
+                provider,
+                str(event.get("update_id", "")),
+                str(message.get("chat", {}).get("id", "")),
+                str(message.get("from", {}).get("id", "")),
+                message.get("text", ""),
+            )
         if provider == "slack":
             message = event.get("event", event)
-            return InboundMessage(provider, event.get("event_id", message.get("client_msg_id", "")),
-                str(message.get("channel", "")), str(message.get("user", "")), message.get("text", ""))
+            return InboundMessage(
+                provider,
+                event.get("event_id", message.get("client_msg_id", "")),
+                str(message.get("channel", "")),
+                str(message.get("user", "")),
+                message.get("text", ""),
+            )
         if provider == "discord":
-            return InboundMessage(provider, str(event.get("id", "")), str(event.get("channel_id", "")),
-                str(event.get("author", {}).get("id", "")), event.get("content", ""))
+            return InboundMessage(
+                provider,
+                str(event.get("id", "")),
+                str(event.get("channel_id", "")),
+                str(event.get("author", {}).get("id", "")),
+                event.get("content", ""),
+            )
         raise ValueError(f"Unsupported messaging provider: {provider}")
 
     def _authorize(self, message: InboundMessage) -> None:
@@ -87,13 +105,24 @@ class MessagingGateway:
             self._save()
         return self._sessions[key]
 
-    async def process(self, provider: str, event: dict[str, Any], payload: bytes,
-                      signature: str, agent_fn: Callable[[str, str], Awaitable[str]]) -> dict:
+    async def process(
+        self,
+        provider: str,
+        event: dict[str, Any],
+        payload: bytes,
+        signature: str,
+        agent_fn: Callable[[str, str], Awaitable[str]],
+    ) -> dict:
         if not self.verify_signature(provider, payload, signature):
             raise PermissionError("Invalid webhook signature")
         message = self.normalize(provider, event)
         self._authorize(message)
         session_id = self.session_for(message)
         reply = await agent_fn(message.text, session_id)
-        return {"ok": True, "provider": provider, "session_id": session_id,
-                "channel_id": message.channel_id, "reply": reply}
+        return {
+            "ok": True,
+            "provider": provider,
+            "session_id": session_id,
+            "channel_id": message.channel_id,
+            "reply": reply,
+        }

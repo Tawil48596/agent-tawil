@@ -19,24 +19,32 @@ from plugins.evals.runner import EvalRunner  # noqa: E402
 
 
 async def run(history_path: Path) -> dict:
-    fake = ScriptedLLM([
-        ScriptedResponse(tool_calls=[{
-            "id": "offline_call_1",
-            "name": "echo",
-            "arguments": '{"text":"hello"}',
-        }]),
-        ScriptedResponse(
-            content="Tool returned hello",
-            usage={"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
-        ),
-    ])
-    router = ModelRouter({
-        "llm": {
-            "providers": {"openai": {"api_key": "offline", "base_url": ""}},
-            "fallback_chain": ["openai"],
-        },
-        "agent": {},
-    })
+    fake = ScriptedLLM(
+        [
+            ScriptedResponse(
+                tool_calls=[
+                    {
+                        "id": "offline_call_1",
+                        "name": "echo",
+                        "arguments": '{"text":"hello"}',
+                    }
+                ]
+            ),
+            ScriptedResponse(
+                content="Tool returned hello",
+                usage={"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
+            ),
+        ]
+    )
+    router = ModelRouter(
+        {
+            "llm": {
+                "providers": {"openai": {"api_key": "offline", "base_url": ""}},
+                "fallback_chain": ["openai"],
+            },
+            "agent": {},
+        }
+    )
     dispatcher = ToolDispatcher()
     dispatcher.register("echo", lambda text: text)
     engine = AgentEngine(router, {}, dispatcher, completion_fn=fake)

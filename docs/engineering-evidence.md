@@ -53,7 +53,7 @@ python -m scripts.backup_data --verify backup.zip
 python -m scripts.backup_data --restore backup.zip --data-root restored-data
 
 # 完整发布候选门禁；证据默认写入 data/release/evidence.json
-python -m scripts.run_release_gates
+uv run --frozen python -m scripts.run_release_gates
 
 # Web 生产构建
 Set-Location web
@@ -62,6 +62,8 @@ npm run build
 ```
 
 2026-08-22 的 `v2.0.0` 本地候选基线为 115 项测试全部通过、总覆盖率 43.01%，Web 生产构建和真实浏览器首页/设置页冒烟通过。离线 Agent 工具循环为 100% 通过率、工具与参数准确率均为 1.0，Token 和延迟均在预算内；故障演练、备份往返和跟踪文件凭据扫描通过。该数字是本地验证快照，不是永久性能承诺；推送后的结果仍应以 GitHub Actions 为准。
+
+2026-08-23 的本地收敛候选为 132 项测试全部通过、总覆盖率 46.25%；关键模块覆盖率分别为 Agent 主循环 87.67%、工具分发 84.21%、执行账本 76.19%、会话存储 84.62%，均超过阻断阈值。全量 Ruff、`core/` 与 `shared/` Mypy、离线 Agent 评测、恢复演示、故障演练、备份往返、敏感信息扫描、Web lint/测试/生产构建、真实浏览器冒烟和 wheel 隔离安装均通过。证据可用上述冻结依赖命令重新生成；远端 GitHub 门禁结果仍以 Actions 为准。
 
 ## 关键取舍
 

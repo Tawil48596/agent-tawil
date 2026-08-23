@@ -1,7 +1,5 @@
 """固定大小分块 — 通用文本"""
 
-import re
-
 
 class FixedSizeChunker:
     """按固定 token 数分块 (估算: 1 token ≈ 4 字符)"""
@@ -40,7 +38,7 @@ class FixedSizeChunker:
                 final.append(chunk)
             else:
                 for i in range(0, len(chunk), self._char_size - overlap_chars):
-                    sub = chunk[i:i + self._char_size]
+                    sub = chunk[i : i + self._char_size]
                     if sub.strip():
                         final.append(sub.strip())
 

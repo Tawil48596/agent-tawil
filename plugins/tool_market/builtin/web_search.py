@@ -16,13 +16,16 @@ async def web_search(query: str, engine: str = "duckduckgo", limit: int = 5) -> 
     if engine == "duckduckgo":
         return await _search_duckduckgo(query, limit)
     else:
-        return json.dumps({"error": f"Search engine '{engine}' requires API key"}, ensure_ascii=False)
+        return json.dumps(
+            {"error": f"Search engine '{engine}' requires API key"}, ensure_ascii=False
+        )
 
 
 async def _search_duckduckgo(query: str, limit: int = 5) -> str:
     """DuckDuckGo 搜索 (无 API Key 需要)"""
     try:
         import httpx
+
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(
                 "https://api.duckduckgo.com/",
@@ -33,26 +36,32 @@ async def _search_duckduckgo(query: str, limit: int = 5) -> str:
             results = []
             # Abstract
             if data.get("AbstractText"):
-                results.append({
-                    "title": data.get("AbstractSource", "DuckDuckGo"),
-                    "snippet": data["AbstractText"],
-                    "url": data.get("AbstractURL", ""),
-                })
+                results.append(
+                    {
+                        "title": data.get("AbstractSource", "DuckDuckGo"),
+                        "snippet": data["AbstractText"],
+                        "url": data.get("AbstractURL", ""),
+                    }
+                )
 
             # Related topics
             for topic in data.get("RelatedTopics", [])[:limit]:
                 if isinstance(topic, dict) and topic.get("Text"):
-                    results.append({
-                        "title": topic.get("FirstURL", "").split("/")[-1].replace("_", " "),
-                        "snippet": topic["Text"],
-                        "url": topic.get("FirstURL", ""),
-                    })
+                    results.append(
+                        {
+                            "title": topic.get("FirstURL", "").split("/")[-1].replace("_", " "),
+                            "snippet": topic["Text"],
+                            "url": topic.get("FirstURL", ""),
+                        }
+                    )
 
             return json.dumps({"query": query, "results": results[:limit]}, ensure_ascii=False)
 
     except ImportError:
         # Fallback: 提示安装 httpx
-        return json.dumps({"error": "httpx not installed. Run: pip install httpx"}, ensure_ascii=False)
+        return json.dumps(
+            {"error": "httpx not installed. Run: pip install httpx"}, ensure_ascii=False
+        )
     except Exception as e:
         logger.warning("DuckDuckGo search failed", error=str(e))
         return json.dumps({"error": str(e), "query": query}, ensure_ascii=False)
@@ -92,8 +101,17 @@ def _extract_html(html: str, url: str, max_chars: int) -> dict:
     title = title_tag.get_text(" ", strip=True) if title_tag else url
 
     ignored_tags = [
-        "script", "style", "noscript", "template", "svg", "canvas",
-        "nav", "footer", "header", "aside", "form",
+        "script",
+        "style",
+        "noscript",
+        "template",
+        "svg",
+        "canvas",
+        "nav",
+        "footer",
+        "header",
+        "aside",
+        "form",
     ]
     for tag in soup(ignored_tags):
         tag.decompose()
@@ -196,7 +214,10 @@ async def web_extract(url: str, render_js: bool = False, max_chars: int = 20000)
                     {
                         "error": static_error or str(error),
                         "browser_error": str(error),
-                        "hint": "Run 'playwright install chromium' to extract JavaScript-rendered pages.",
+                        "hint": (
+                            "Run 'playwright install chromium' to extract "
+                            "JavaScript-rendered pages."
+                        ),
                         "url": url,
                     },
                     ensure_ascii=False,

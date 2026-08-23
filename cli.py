@@ -17,15 +17,15 @@ import asyncio
 import cmd
 import os
 import sys
-from typing import Optional
 
 # 确保项目根在 path 中
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from plugins.agent_engine.model_router import ModelRouter, RouteRequest, TaskType
-from plugins.agent_engine.engine import AgentEngine
-from plugins.agent_engine.tool_dispatch import ToolDispatcher
 from app import load_config
+from plugins.agent_engine.engine import AgentEngine
+from plugins.agent_engine.model_router import ModelRouter, RouteRequest, TaskType
+from plugins.agent_engine.tool_dispatch import ToolDispatcher
+from shared.version import APP_VERSION
 
 # ── 颜色 ──
 C = {
@@ -47,13 +47,17 @@ def color(text: str, c: str) -> str:
 
 # ── CLI ──
 
+
 class AgentCLI(cmd.Cmd):
-    intro = color("""
+    intro = color(
+        f"""
 ╔══════════════════════════════════════════════╗
-║          AI Agent Platform  v0.1.1          ║
+║          AI Agent Platform  v{APP_VERSION:<15}║
 ║  输入 /help 查看命令  |  /models 查看模型    ║
 ╚══════════════════════════════════════════════╝
-""", "cyan")
+""",
+        "cyan",
+    )
     prompt = color("\n▸ ", "green")
 
     def __init__(self):
@@ -61,11 +65,15 @@ class AgentCLI(cmd.Cmd):
         self.config = load_config()
         self.router = ModelRouter(self.config)
         self.tool_dispatcher = ToolDispatcher()
-        self.engine = AgentEngine(self.router, self.config.get("agent", {}))
+        self.engine = AgentEngine(
+            self.router,
+            self.config.get("agent", {}),
+            self.tool_dispatcher,
+        )
 
         # 对话状态
         self.history: list[dict] = []
-        self.current_model: Optional[str] = None   # None = 使用默认路由
+        self.current_model: str | None = None  # None = 使用默认路由
         self.current_task: TaskType = TaskType.REASONING
 
         # 注册内置工具
@@ -76,15 +84,17 @@ class AgentCLI(cmd.Cmd):
         if default:
             print(color(f"  默认模型: {self.router._default_model}", "dim"))
             print(color(f"  可用 Provider: {', '.join(self.router._providers.keys())}", "dim"))
-            print(color(f"  输入 /models 查看全部  |  /model <name> 切换模型", "dim"))
+            print(color("  输入 /models 查看全部  |  /model <name> 切换模型", "dim"))
 
     def _register_builtin_tools(self):
         """注册基础内置工具"""
+
         async def echo(text: str) -> str:
             return text
 
         async def now() -> str:
             import datetime
+
             return datetime.datetime.now().isoformat()
 
         self.tool_dispatcher.register("echo", echo)
@@ -105,7 +115,7 @@ class AgentCLI(cmd.Cmd):
     def do_model(self, arg: str):
         """/model <name> — 切换模型 (e.g. /model claude-sonnet-4)"""
         arg = arg.strip()
-        available = self.router.list_available_models()
+        self.router.list_available_models()
         all_models = {m["name"]: m for m in self.router.list_models()}
 
         if not arg:
@@ -126,8 +136,14 @@ class AgentCLI(cmd.Cmd):
             if info["available"]:
                 self.current_model = arg
                 print(color(f"✓ 已切换模型为: {arg}", "green"))
-                print(color(f"  Provider: {info['provider']} | 上下文: {info['context_length']//1000}K | "
-                           f"视觉: {'✅' if info['supports_vision'] else '❌'}", "dim"))
+                context_k = info["context_length"] // 1000
+                vision = "✅" if info["supports_vision"] else "❌"
+                print(
+                    color(
+                        f"  Provider: {info['provider']} | 上下文: {context_k}K | 视觉: {vision}",
+                        "dim",
+                    )
+                )
             else:
                 print(color(f"✗ 模型 {arg} 存在但 {info['provider']} 未配置 API Key", "red"))
         else:
@@ -179,11 +195,13 @@ class AgentCLI(cmd.Cmd):
             content = msg.get("content", "") or "(tool calls)"
             preview = content[:100] + "..." if len(content) > 100 else content
             role_color = "blue" if role == "user" else "green" if role == "assistant" else "dim"
-            print(f"  {i+1}. {color(role, role_color)}: {preview}")
+            print(f"  {i + 1}. {color(role, role_color)}: {preview}")
 
     def do_help(self, arg: str):
         """/help — 显示帮助"""
-        print(color("""
+        print(
+            color(
+                """
 命令列表:
   /model [name]   切换模型 (/model claude-sonnet-4, /model auto)
   /models         列出所有可用模型及价格
@@ -196,14 +214,17 @@ class AgentCLI(cmd.Cmd):
 
 直接输入文本 → 发送给 Agent
 Ctrl+C → 中断当前生成
-""", "cyan"))
+""",
+                "cyan",
+            )
+        )
 
     def do_exit(self, arg: str):
         """/exit — 退出"""
         print(color("\n再见! 👋", "cyan"))
         return True
 
-    do_EOF = do_exit  # Ctrl+D 退出
+    do_EOF = do_exit  # noqa: N815  # cmd.Cmd requires this exact hook name
 
     # ── 内部 ──
 
@@ -212,7 +233,11 @@ Ctrl+C → 中断当前生成
         models = self.router.list_models()
         available_names = self.router.list_available_models()
 
-        print(f"\n{'模型名':<25} {'Provider':<12} {'上下文':<10} {'视觉':<6} {'工具':<6} {'输入/$1M':<12} {'输出/$1M':<12} {'状态'}")
+        headers = ("模型名", "Provider", "上下文", "视觉", "工具", "输入/$1M", "输出/$1M", "状态")
+        print(
+            f"\n{headers[0]:<25} {headers[1]:<12} {headers[2]:<10} {headers[3]:<6} "
+            f"{headers[4]:<6} {headers[5]:<12} {headers[6]:<12} {headers[7]}"
+        )
         print("-" * 110)
 
         for m in sorted(models, key=lambda x: x["provider"]):
@@ -223,11 +248,11 @@ Ctrl+C → 中断当前生成
             print(
                 f"{marker} {m['name']:<23} "
                 f"{m['provider']:<12} "
-                f"{m['context_length']//1000}K{'':<7} "
+                f"{m['context_length'] // 1000}K{'':<7} "
                 f"{'✅' if m['supports_vision'] else '❌':<6} "
                 f"{'✅' if m['supports_tools'] else '❌':<6} "
-                f"${m['cost_per_1k_input']*1000:<11.4f} "
-                f"${m['cost_per_1k_output']*1000:<11.4f} "
+                f"${m['cost_per_1k_input'] * 1000:<11.4f} "
+                f"${m['cost_per_1k_output'] * 1000:<11.4f} "
             )
         print()
         print(color("● 可用  ○ 未配置 API Key  ★ 当前选中", "dim"))
@@ -239,18 +264,32 @@ Ctrl+C → 中断当前生成
 
         # 构建 enabled_tools
         enabled_tools = [
-            {"name": "echo", "description": "Echo back the input",
-             "parameters": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}},
-            {"name": "get_current_time", "description": "Get the current date and time",
-             "parameters": {"type": "object", "properties": {}, "required": []}},
+            {
+                "name": "echo",
+                "description": "Echo back the input",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"],
+                },
+            },
+            {
+                "name": "get_current_time",
+                "description": "Get the current date and time",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
         ]
 
         # 模型信息提示
-        route = self.router.route(RouteRequest(
-            task_type=self.current_task,
-            override_model=self.current_model,
-        ))
-        model_label = f"{route.model} ({route.provider})" + (" [手动]" if self.current_model else " [自动]")
+        route = self.router.route(
+            RouteRequest(
+                task_type=self.current_task,
+                override_model=self.current_model,
+            )
+        )
+        model_label = f"{route.model} ({route.provider})" + (
+            " [手动]" if self.current_model else " [自动]"
+        )
         print(color(f"\n🤖 Agent [{model_label}]:", "cyan"), end=" ", flush=True)
 
         try:
@@ -270,7 +309,7 @@ Ctrl+C → 中断当前生成
                     print(color(f"\n  [{event['content']}]", "dim"), end="")
 
                 elif etype == "tool_calls":
-                    print(color(f"\n  🔧 调用工具: ", "yellow"), end="")
+                    print(color("\n  🔧 调用工具: ", "yellow"), end="")
                     for tc in event.get("calls", []):
                         name = tc.get("function", {}).get("name", "?")
                         print(color(f"{name} ", "yellow"), end="")
@@ -301,6 +340,7 @@ Ctrl+C → 中断当前生成
 
 
 # ── Entry Point ──
+
 
 def main():
     try:

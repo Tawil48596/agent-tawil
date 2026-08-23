@@ -1,6 +1,6 @@
 """用户画像 — 偏好、环境、习惯"""
 
-from typing import Any, Optional
+from typing import Any
 
 
 class UserProfile:

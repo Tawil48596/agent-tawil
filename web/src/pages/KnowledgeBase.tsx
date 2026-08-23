@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, DragEvent } from "react";
-import { BookOpen, Upload, Plus, Trash2, Search, FileText, X } from "lucide-react";
+import { useState, useEffect, DragEvent } from "react";
+import { BookOpen, Upload, Plus, Trash2, Search, FileText } from "lucide-react";
 
 export function KnowledgeBase() {
   const [kbs, setKbs] = useState<any[]>([]);
@@ -10,9 +10,12 @@ export function KnowledgeBase() {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [uploads, setUploads] = useState<{ id: string; name: string; chunks: number; size: string; strategy?: string }[]>([]);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { loadKBs(); }, []);
+  useEffect(() => {
+    fetch("/api/v1/rag/knowledge-bases")
+      .then((response) => response.json())
+      .then((data) => setKbs(data.knowledge_bases || []))
+      .catch(() => undefined);
+  }, []);
 
   const loadKBs = async () => {
     try { setKbs((await (await fetch("/api/v1/rag/knowledge-bases")).json()).knowledge_bases || []); } catch {}
@@ -90,13 +93,16 @@ export function KnowledgeBase() {
         <button onClick={createKB} className="bg-[#6c8cff] text-white px-4 py-2 rounded-lg text-sm flex items-center gap-1"><Plus size={16} /> 新建</button>
       </div>
 
-      <div className="flex gap-4 h-[calc(100%-60px)]">
-        <div className="w-64 shrink-0 space-y-2">
+      <div className="flex h-[calc(100%-60px)] flex-col gap-4 lg:flex-row">
+        <div className="w-full shrink-0 space-y-2 lg:w-64">
           {kbs.map((kb: any) => (
-            <div key={kb.id} onClick={() => { setActiveKb(kb.id); loadDocuments(kb.id); setResults([]); }}
-              className={`bg-[#1a1d27] border rounded-lg p-3 cursor-pointer flex justify-between items-center ${activeKb === kb.id ? "border-[#6c8cff]" : "border-[#2a2d3a]"}`}>
-              <div><div className="text-sm font-medium">{kb.name}</div><div className="text-xs text-[#8b8fa3]">{kb.description || "无描述"}</div></div>
-              <button onClick={(e) => { e.stopPropagation(); deleteKB(kb.id); }} className="text-[#8b8fa3] hover:text-[#f87171]"><Trash2 size={14} /></button>
+            <div key={kb.id}
+              className={`flex items-center rounded-lg border bg-[#1a1d27] p-2 ${activeKb === kb.id ? "border-[#6c8cff]" : "border-[#2a2d3a]"}`}>
+              <button type="button" onClick={() => { setActiveKb(kb.id); void loadDocuments(kb.id); setResults([]); }} className="min-w-0 flex-1 p-1 text-left">
+                <span className="block text-sm font-medium">{kb.name}</span>
+                <span className="block truncate text-xs text-[#8b8fa3]">{kb.description || "无描述"}</span>
+              </button>
+              <button type="button" aria-label={`删除知识库 ${kb.name}`} onClick={() => void deleteKB(kb.id)} className="p-2 text-[#8b8fa3] hover:text-[#f87171]"><Trash2 size={14} aria-hidden="true" /></button>
             </div>
           ))}
         </div>
@@ -105,23 +111,23 @@ export function KnowledgeBase() {
           {activeKb ? (
             <>
               {/* Upload area */}
-              <div
+              <label
+                htmlFor="knowledge-upload"
                 onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleDrop}
                 className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer ${
                   dragOver ? "border-[#6c8cff] bg-[#1e2030]" : "border-[#2a2d3a] hover:border-[#8b8fa3]"
                 }`}
-                onClick={() => fileRef.current?.click()}
               >
-                <input ref={fileRef} type="file" multiple className="hidden"
+                <input id="knowledge-upload" type="file" multiple className="hidden"
                   accept=".pdf,.md,.txt,.py,.js,.ts,.go,.rs,.java,.json,.yaml,.toml,.html,.css"
                   onChange={(e) => { for (const f of Array.from(e.target.files || [])) uploadFile(f); e.target.value = ""; }}
                 />
-                <Upload size={36} className="mx-auto mb-3 text-[#8b8fa3]" />
+                <Upload size={36} aria-hidden="true" className="mx-auto mb-3 text-[#8b8fa3]" />
                 <p className="text-sm">{uploading ? "上传中..." : "拖拽文件到此处 或 点击选择"}</p>
                 <p className="text-xs text-[#8b8fa3] mt-1">支持 PDF · Markdown · TXT · Python · JS/TS · Go · 更多</p>
-              </div>
+              </label>
 
               {/* Upload history */}
               {uploads.length > 0 && (
@@ -149,9 +155,9 @@ export function KnowledgeBase() {
               <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4">
                 <h3 className="text-sm font-medium mb-2">检索测试</h3>
                 <div className="flex gap-2">
-                  <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && searchKB()}
+                  <input aria-label="知识库检索词" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && searchKB()}
                     placeholder="输入查询..." className="flex-1 bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#6c8cff]" />
-                  <button onClick={searchKB} className="bg-[#6c8cff] text-white px-4 py-2 rounded-lg text-sm"><Search size={16} /></button>
+                  <button type="button" aria-label="检索知识库" onClick={searchKB} className="bg-[#6c8cff] text-white px-4 py-2 rounded-lg text-sm"><Search size={16} aria-hidden="true" /></button>
                 </div>
                 {status && <p className="text-xs text-[#8b8fa3] mt-2">{status}</p>}
                 {results.map((r: any, i: number) => (

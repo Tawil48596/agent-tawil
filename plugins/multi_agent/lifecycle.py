@@ -1,9 +1,10 @@
 """生命周期管理 — 创建/监控/终止子代理"""
 
-import asyncio
+import contextlib
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any
 
 
 @dataclass
@@ -11,9 +12,9 @@ class AgentLifecycle:
     agent_id: str
     status: str = "created"
     created_at: float = field(default_factory=time.time)
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
-    error: Optional[str] = None
+    started_at: float | None = None
+    completed_at: float | None = None
+    error: str | None = None
     metadata: dict = field(default_factory=dict)
 
 
@@ -26,6 +27,7 @@ class LifecycleManager:
 
     def create(self, agent_id: str = "", metadata: dict = None) -> str:
         import uuid
+
         aid = agent_id or uuid.uuid4().hex[:8]
         self._agents[aid] = AgentLifecycle(agent_id=aid, metadata=metadata or {})
         return aid
@@ -58,7 +60,7 @@ class LifecycleManager:
             agent.status = "cancelled"
             self._notify(agent_id, "cancelled")
 
-    def get(self, agent_id: str) -> Optional[AgentLifecycle]:
+    def get(self, agent_id: str) -> AgentLifecycle | None:
         return self._agents.get(agent_id)
 
     def list_all(self) -> list[AgentLifecycle]:
@@ -69,7 +71,5 @@ class LifecycleManager:
 
     def _notify(self, agent_id: str, status: str) -> None:
         for cb in self._on_status_change:
-            try:
+            with contextlib.suppress(Exception):
                 cb(agent_id, status)
-            except Exception:
-                pass

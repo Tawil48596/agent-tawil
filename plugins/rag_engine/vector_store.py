@@ -1,8 +1,8 @@
 """向量库抽象层"""
 
+import contextlib
 import json
 from pathlib import Path
-from typing import Any, Optional
 
 import structlog
 
@@ -17,14 +17,13 @@ class VectorStore:
         vs_cfg = cfg.get("vector_store", {}) if isinstance(cfg, dict) else {}
         self._backend = vs_cfg.get("backend", "builtin")
         self._client = None
-        self._collections: dict[str, "BuiltinCollection"] = {}  # builtin fallback
-        self._storage_path = Path(
-            vs_cfg.get("builtin", {}).get("path", "data/rag_vectors.json")
-        )
+        self._collections: dict[str, BuiltinCollection] = {}  # builtin fallback
+        self._storage_path = Path(vs_cfg.get("builtin", {}).get("path", "data/rag_vectors.json"))
 
         if self._backend == "chromadb":
             try:
                 import chromadb
+
                 chroma_cfg = vs_cfg.get("chromadb", {})
                 self._client = chromadb.PersistentClient(
                     path=chroma_cfg.get("path", "./chroma_data"),
@@ -40,8 +39,7 @@ class VectorStore:
         try:
             payload = json.loads(self._storage_path.read_text(encoding="utf-8"))
             self._collections = {
-                name: BuiltinCollection(name, documents)
-                for name, documents in payload.items()
+                name: BuiltinCollection(name, documents) for name, documents in payload.items()
             }
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             self._collections = {}
@@ -50,10 +48,7 @@ class VectorStore:
         if self._backend != "builtin":
             return
         self._storage_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            name: collection.documents()
-            for name, collection in self._collections.items()
-        }
+        payload = {name: collection.documents() for name, collection in self._collections.items()}
         temporary = self._storage_path.with_suffix(".tmp")
         temporary.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2),
@@ -65,15 +60,9 @@ class VectorStore:
         """添加 chunks 到向量库"""
         if self._client and self._backend == "chromadb":
             col = self._client.get_or_create_collection(name=collection)
-            ids = [
-                chunk.get("id") or f"{collection}_{i}"
-                for i, chunk in enumerate(chunks)
-            ]
+            ids = [chunk.get("id") or f"{collection}_{i}" for i, chunk in enumerate(chunks)]
             documents = [c["content"] for c in chunks]
-            metadatas = [
-                self._normalize_metadata(c.get("metadata", {}))
-                for c in chunks
-            ]
+            metadatas = [self._normalize_metadata(c.get("metadata", {})) for c in chunks]
             col.upsert(ids=ids, documents=documents, metadatas=metadatas)
         else:
             if collection not in self._collections:
@@ -93,8 +82,9 @@ class VectorStore:
                 normalized[key] = json.dumps(value, ensure_ascii=False)
         return normalized
 
-    async def search(self, query: str, collections: list[str] = None,
-                      top_k: int = 10) -> list[dict]:
+    async def search(
+        self, query: str, collections: list[str] = None, top_k: int = 10
+    ) -> list[dict]:
         """搜索"""
         all_results = []
 
@@ -102,7 +92,8 @@ class VectorStore:
             search_collections = collections
         elif self._client and self._backend == "chromadb":
             search_collections = [
-                collection.name for collection in self._client.list_collections()
+                collection.name
+                for collection in self._client.list_collections()
                 if collection.name.startswith("kb_")
             ]
         else:
@@ -115,13 +106,20 @@ class VectorStore:
                     results = col.query(query_texts=[query], n_results=top_k)
                     if results["ids"] and results["ids"][0]:
                         for i, mid in enumerate(results["ids"][0]):
-                            all_results.append({
-                                "id": mid,
-                                "content": results["documents"][0][i] if results["documents"] else "",
-                                "score": 1.0 - results["distances"][0][i]
-                                if results.get("distances") else 0.5,
-                                "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
-                            })
+                            all_results.append(
+                                {
+                                    "id": mid,
+                                    "content": results["documents"][0][i]
+                                    if results["documents"]
+                                    else "",
+                                    "score": 1.0 - results["distances"][0][i]
+                                    if results.get("distances")
+                                    else 0.5,
+                                    "metadata": results["metadatas"][0][i]
+                                    if results["metadatas"]
+                                    else {},
+                                }
+                            )
                 except Exception:
                     pass
         else:
@@ -134,10 +132,8 @@ class VectorStore:
 
     async def delete_collection(self, collection: str):
         if self._client and self._backend == "chromadb":
-            try:
+            with contextlib.suppress(Exception):
                 self._client.delete_collection(name=collection)
-            except Exception:
-                pass
         self._collections.pop(collection, None)
         self._persist_builtin()
 
@@ -174,7 +170,7 @@ class VectorStore:
 class BuiltinCollection:
     """内置向量存储 — 关键词匹配 (零依赖)"""
 
-    def __init__(self, name: str, documents: Optional[list[dict]] = None):
+    def __init__(self, name: str, documents: list[dict] | None = None):
         self.name = name
         self._docs: list[dict] = list(documents or [])
 
@@ -186,7 +182,8 @@ class BuiltinCollection:
 
     def delete_document(self, document_id: str) -> None:
         self._docs = [
-            document for document in self._docs
+            document
+            for document in self._docs
             if document.get("metadata", {}).get("document_id") != document_id
         ]
 
@@ -209,12 +206,14 @@ class BuiltinCollection:
                     score = 0.5 * len(overlap) / max(len(query_words), 1)
 
             if score > 0:
-                scored.append({
-                    "id": doc.get("id") or f"{self.name}_{i}",
-                    "content": content,
-                    "score": score,
-                    "metadata": doc.get("metadata", {}),
-                })
+                scored.append(
+                    {
+                        "id": doc.get("id") or f"{self.name}_{i}",
+                        "content": content,
+                        "score": score,
+                        "metadata": doc.get("metadata", {}),
+                    }
+                )
 
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:top_k]

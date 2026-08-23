@@ -1,17 +1,16 @@
 """Agent 推理引擎 — 核心循环 (observe → think → act → observe)"""
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, AsyncIterator, Optional
+from typing import Any
 
 import structlog
 from litellm import acompletion
 
+from plugins.agent_engine.context_manager import ContextManager
 from plugins.agent_engine.model_router import ModelRouter, RouteRequest, RouteResult, TaskType
 from plugins.agent_engine.prompt_builder import PromptBuilder
-from plugins.agent_engine.context_manager import ContextManager
 from plugins.agent_engine.tool_dispatch import ToolDispatcher
-from shared.models import ToolCall
 
 logger = structlog.get_logger()
 
@@ -33,7 +32,7 @@ class AgentEngine:
         self,
         router: ModelRouter,
         agent_config: dict[str, Any],
-        tool_dispatcher: Optional[ToolDispatcher] = None,
+        tool_dispatcher: ToolDispatcher | None = None,
         completion_fn: Any = None,
     ):
         self.router = router
@@ -50,26 +49,33 @@ class AgentEngine:
         self,
         user_message: str,
         *,
-        session: Optional[dict] = None,
-        history: Optional[list[dict]] = None,
-        memories: Optional[list[dict]] = None,
-        rag_context: Optional[list[dict]] = None,
-        enabled_tools: Optional[list[dict]] = None,
-        override_model: Optional[str] = None,
+        session: dict | None = None,
+        history: list[dict] | None = None,
+        memories: list[dict] | None = None,
+        rag_context: list[dict] | None = None,
+        enabled_tools: list[dict] | None = None,
+        override_model: str | None = None,
         task_type: TaskType = TaskType.REASONING,
-        reasoning_effort: Optional[str] = None,
-        skill_files: Optional[list[str]] = None,
+        reasoning_effort: str | None = None,
+        skill_files: list[str] | None = None,
     ) -> EngineResponse:
         """运行 Agent 推理循环，返回最终回复"""
         messages = await self._build_initial_messages(
-            user_message, session, history, memories, rag_context,
-            enabled_tools, skill_files,
+            user_message,
+            session,
+            history,
+            memories,
+            rag_context,
+            enabled_tools,
+            skill_files,
         )
 
-        route_result = self.router.route(RouteRequest(
-            task_type=task_type,
-            override_model=override_model,
-        ))
+        route_result = self.router.route(
+            RouteRequest(
+                task_type=task_type,
+                override_model=override_model,
+            )
+        )
 
         return await self._inference_loop(
             messages, route_result, enabled_tools, reasoning_effort, session
@@ -81,26 +87,33 @@ class AgentEngine:
         self,
         user_message: str,
         *,
-        session: Optional[dict] = None,
-        history: Optional[list[dict]] = None,
-        memories: Optional[list[dict]] = None,
-        rag_context: Optional[list[dict]] = None,
-        enabled_tools: Optional[list[dict]] = None,
-        override_model: Optional[str] = None,
+        session: dict | None = None,
+        history: list[dict] | None = None,
+        memories: list[dict] | None = None,
+        rag_context: list[dict] | None = None,
+        enabled_tools: list[dict] | None = None,
+        override_model: str | None = None,
         task_type: TaskType = TaskType.REASONING,
-        reasoning_effort: Optional[str] = None,
-        skill_files: Optional[list[str]] = None,
+        reasoning_effort: str | None = None,
+        skill_files: list[str] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """流式运行 Agent 推理循环，逐 token 产出事件"""
         messages = await self._build_initial_messages(
-            user_message, session, history, memories, rag_context,
-            enabled_tools, skill_files,
+            user_message,
+            session,
+            history,
+            memories,
+            rag_context,
+            enabled_tools,
+            skill_files,
         )
 
-        route_result = self.router.route(RouteRequest(
-            task_type=task_type,
-            override_model=override_model,
-        ))
+        route_result = self.router.route(
+            RouteRequest(
+                task_type=task_type,
+                override_model=override_model,
+            )
+        )
 
         turns = 0
         consecutive_failures = 0
@@ -164,7 +177,9 @@ class AgentEngine:
                                 if tc.function.name:
                                     tool_calls_buffer[idx]["function"]["name"] = tc.function.name
                                 if tc.function.arguments:
-                                    tool_calls_buffer[idx]["function"]["arguments"] += tc.function.arguments
+                                    tool_calls_buffer[idx]["function"]["arguments"] += (
+                                        tc.function.arguments
+                                    )
 
                     if choice.finish_reason:
                         finish_reason = choice.finish_reason
@@ -199,11 +214,13 @@ class AgentEngine:
                         assistant_message["reasoning_content"] = reasoning_content
                     messages.append(assistant_message)
                     for i, result in enumerate(results):
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_calls_list[i].get("id", ""),
-                            "content": result.get("output", ""),
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_calls_list[i].get("id", ""),
+                                "content": result.get("output", ""),
+                            }
+                        )
 
                     if all(r.get("error") for r in results):
                         consecutive_failures += 1
@@ -228,10 +245,12 @@ class AgentEngine:
                 )
                 consecutive_failures += 1
                 try:
-                    route_result = self.router.route(RouteRequest(
-                        task_type=task_type,
-                        excluded_providers=failed_providers,
-                    ))
+                    route_result = self.router.route(
+                        RouteRequest(
+                            task_type=task_type,
+                            excluded_providers=failed_providers,
+                        )
+                    )
                 except RuntimeError:
                     yield {"type": "error", "message": f"LLM 调用失败: {str(e)}"}
                     return
@@ -246,9 +265,9 @@ class AgentEngine:
         self,
         messages: list[dict],
         route_result: RouteResult,
-        enabled_tools: Optional[list[dict]],
-        reasoning_effort: Optional[str] = None,
-        session: Optional[dict] = None,
+        enabled_tools: list[dict] | None,
+        reasoning_effort: str | None = None,
+        session: dict | None = None,
     ) -> EngineResponse:
         """非流式推理循环"""
         turns = 0
@@ -261,9 +280,11 @@ class AgentEngine:
                 messages = await self.context_manager.compress(messages, route_result)
 
             try:
-                response = await (self._completion_fn or acompletion)(**self._completion_kwargs(
-                    route_result, messages, enabled_tools, reasoning_effort
-                ))
+                response = await (self._completion_fn or acompletion)(
+                    **self._completion_kwargs(
+                        route_result, messages, enabled_tools, reasoning_effort
+                    )
+                )
             except Exception as e:
                 failed_provider = route_result.provider
                 failed_providers.add(failed_provider)
@@ -275,10 +296,12 @@ class AgentEngine:
                 )
                 consecutive_failures += 1
                 try:
-                    route_result = self.router.route(RouteRequest(
-                        task_type=TaskType.FAST,
-                        excluded_providers=failed_providers,
-                    ))
+                    route_result = self.router.route(
+                        RouteRequest(
+                            task_type=TaskType.FAST,
+                            excluded_providers=failed_providers,
+                        )
+                    )
                 except RuntimeError:
                     return EngineResponse(
                         text=f"LLM 调用失败: {str(e)}",
@@ -313,9 +336,7 @@ class AgentEngine:
                 for tc in choice.message.tool_calls
             ]
             executed_tool_calls.extend(tool_calls_raw)
-            results = await self.tool_dispatcher.execute_parallel(
-                tool_calls_raw, context=session
-            )
+            results = await self.tool_dispatcher.execute_parallel(tool_calls_raw, context=session)
 
             assistant_message = {
                 "role": "assistant",
@@ -327,11 +348,13 @@ class AgentEngine:
                 assistant_message["reasoning_content"] = reasoning_content
             messages.append(assistant_message)
             for i, result in enumerate(results):
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_calls_raw[i].get("id", ""),
-                    "content": result.get("output", ""),
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_calls_raw[i].get("id", ""),
+                        "content": result.get("output", ""),
+                    }
+                )
 
             if all(r.get("error") for r in results):
                 consecutive_failures += 1
@@ -357,7 +380,14 @@ class AgentEngine:
         )
 
     async def _build_initial_messages(
-        self, user_message, session, history, memories, rag_context, enabled_tools, skill_files,
+        self,
+        user_message,
+        session,
+        history,
+        memories,
+        rag_context,
+        enabled_tools,
+        skill_files,
     ) -> list[dict]:
         system_prompt = self.prompt_builder.build_system_prompt(
             session=session,
@@ -386,8 +416,8 @@ class AgentEngine:
         self,
         route: RouteResult,
         messages: list[dict],
-        tools: Optional[list[dict]],
-        reasoning_effort: Optional[str],
+        tools: list[dict] | None,
+        reasoning_effort: str | None,
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
             "model": self._litellm_model_name(route),
@@ -475,13 +505,10 @@ class AgentEngine:
 
     @classmethod
     def _add_usage(cls, total: dict[str, int], addition: dict[str, int]) -> dict[str, int]:
-        return {
-            key: total.get(key, 0) + addition.get(key, 0)
-            for key in cls._empty_usage()
-        }
+        return {key: total.get(key, 0) + addition.get(key, 0) for key in cls._empty_usage()}
 
     @staticmethod
-    def _format_tools(tools: Optional[list[dict]]) -> Optional[list[dict]]:
+    def _format_tools(tools: list[dict] | None) -> list[dict] | None:
         """将工具定义转为 OpenAI function-calling 格式"""
         if not tools:
             return None
@@ -491,7 +518,9 @@ class AgentEngine:
                 "function": {
                     "name": t["name"],
                     "description": t.get("description", ""),
-                    "parameters": t.get("parameters", {"type": "object", "properties": {}, "required": []}),
+                    "parameters": t.get(
+                        "parameters", {"type": "object", "properties": {}, "required": []}
+                    ),
                 },
             }
             for t in tools

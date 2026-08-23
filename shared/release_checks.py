@@ -14,6 +14,8 @@ SECRET_PATTERNS = {
     "aws_access_key": re.compile(r"\bAKIA[A-Z0-9]{16}\b"),
 }
 
+SecretFinding = dict[str, int | str]
+
 
 def scan_text(text: str) -> list[tuple[int, str]]:
     findings: list[tuple[int, str]] = []
@@ -24,14 +26,23 @@ def scan_text(text: str) -> list[tuple[int, str]]:
     return findings
 
 
-def scan_tracked_files(root: str | Path) -> list[dict]:
+def scan_tracked_files(root: str | Path) -> list[SecretFinding]:
     repository = Path(root)
-    listed = subprocess.run(
-        ["git", "ls-files", "-z"], cwd=repository, check=True, capture_output=True
-    ).stdout.decode("utf-8").split("\0")
-    findings: list[dict] = []
+    listed = (
+        subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+        )
+        .stdout.decode("utf-8")
+        .split("\0")
+    )
+    findings: list[SecretFinding] = []
     for relative in filter(None, listed):
         path = repository / relative
+        if not path.is_file():
+            continue
         content = path.read_bytes()
         if b"\0" in content:
             continue

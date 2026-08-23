@@ -1,10 +1,7 @@
 """内置记忆后端 — SQLite + JSON (零依赖)"""
 
 import json
-import os
-import time
 from pathlib import Path
-from typing import Optional
 
 
 class BuiltinMemoryBackend:
@@ -31,7 +28,7 @@ class BuiltinMemoryBackend:
                 results.append(e)
         return results[:limit]
 
-    async def get(self, entry_id: str) -> Optional[dict]:
+    async def get(self, entry_id: str) -> dict | None:
         return self._cache.get(entry_id)
 
     async def delete(self, entry_id: str) -> bool:
@@ -47,9 +44,7 @@ class BuiltinMemoryBackend:
             f.unlink()
 
     def _persist(self, eid: str, entry: dict) -> None:
-        (self._dir / f"{eid}.json").write_text(
-            json.dumps(entry, ensure_ascii=False, default=str)
-        )
+        (self._dir / f"{eid}.json").write_text(json.dumps(entry, ensure_ascii=False, default=str))
 
     def _load(self) -> None:
         for f in self._dir.glob("*.json"):

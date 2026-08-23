@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BarChart3, TrendingUp, DollarSign, Zap, MessageSquare, Wrench, RefreshCw } from "lucide-react";
+import { BarChart3, TrendingUp, Zap, MessageSquare, Wrench, RefreshCw } from "lucide-react";
 
 export function AnalyticsDashboard() {
   const [stats, setStats] = useState<any>({});
@@ -44,7 +44,7 @@ export function AnalyticsDashboard() {
       </div>
       {error && <div className="mb-4 rounded-lg border border-[#f87171]/40 bg-[#3d1515] px-4 py-2 text-sm text-[#fca5a5]">{error}</div>}
 
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((k) => (
           <div key={k.label} className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-5 text-center">
             <div className="text-3xl font-bold" style={{ color: k.color }}>{k.value}</div>
@@ -53,7 +53,7 @@ export function AnalyticsDashboard() {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-5">
           <h3 className="text-sm font-semibold text-[#8b8fa3] mb-4">模型列表</h3>
           <div className="space-y-3">

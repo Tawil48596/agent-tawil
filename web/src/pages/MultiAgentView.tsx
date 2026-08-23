@@ -77,34 +77,36 @@ export function MultiAgentView() {
       )}
 
       {/* Task board */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {plans.map((p) => {
           const pct = Math.round((p.progress || 0) * 100);
           const color = p.status === "completed" ? "#4ade80" : p.status === "running" ? "#6c8cff" : "#fbbf24";
           return (
-            <div key={p.id} onClick={() => loadPlanDetail(p.id)}
-              className="bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4 cursor-pointer hover:border-[#6c8cff] transition-colors">
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="font-semibold text-sm">{p.title}</div>
-                  <div className="text-xs text-[#8b8fa3] mt-1">{p.mode} · {p.completed}/{p.tasks} 完成</div>
-                </div>
-                <span className="text-2xl font-bold" style={{ color }}>{pct}%</span>
-              </div>
-              <div className="mt-3 bg-[#2a2d3a] rounded-full h-2 overflow-hidden">
-                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: color }} />
-              </div>
+            <div key={p.id}
+              className="rounded-xl border border-[#2a2d3a] bg-[#1a1d27] p-4 transition-colors hover:border-[#6c8cff]">
+              <button type="button" onClick={() => void loadPlanDetail(p.id)} className="w-full text-left">
+                <span className="flex items-start justify-between">
+                  <span>
+                    <span className="block text-sm font-semibold">{p.title}</span>
+                    <span className="mt-1 block text-xs text-[#8b8fa3]">{p.mode} · {p.completed}/{p.tasks} 完成</span>
+                  </span>
+                  <span className="text-2xl font-bold" style={{ color }}>{pct}%</span>
+                </span>
+                <span className="mt-3 block h-2 overflow-hidden rounded-full bg-[#2a2d3a]">
+                  <span className="block h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: color }} />
+                </span>
+              </button>
               <div className="flex gap-2 mt-3">
                 {p.status !== "running" && p.status !== "completed" && (
-                  <button onClick={(e) => { e.stopPropagation(); executePlan(p.id); }}
+                  <button type="button" onClick={() => void executePlan(p.id)}
                     className="text-xs bg-[#6c8cff] text-white px-3 py-1 rounded flex items-center gap-1"><Play size={12} /> 执行</button>
                 )}
                 {p.status === "running" && (
-                  <button onClick={(e) => { e.stopPropagation(); cancelPlan(p.id); }}
+                  <button type="button" onClick={() => void cancelPlan(p.id)}
                     className="text-xs bg-[#f87171] text-white px-3 py-1 rounded flex items-center gap-1"><Square size={12} /> 取消</button>
                 )}
                 {(p.status === "failed" || p.status === "cancelled") && (
-                  <button onClick={(e) => { e.stopPropagation(); retryPlan(p.id); }}
+                  <button type="button" onClick={() => void retryPlan(p.id)}
                     className="text-xs bg-[#fbbf24] text-black px-3 py-1 rounded flex items-center gap-1"><RefreshCw size={12} /> 重试</button>
                 )}
               </div>

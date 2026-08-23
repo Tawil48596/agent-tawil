@@ -1,6 +1,6 @@
 """MCP 工具注册表 — 管理所有已发现 MCP 工具"""
 
-from typing import Any, Optional
+from typing import Any
 
 import structlog
 
@@ -33,7 +33,7 @@ class MCPToolRegistry:
             del self._tools[name]
         logger.info("MCP tools unregistered", source=source, count=len(to_remove))
 
-    def get(self, name: str) -> Optional[dict]:
+    def get(self, name: str) -> dict | None:
         return self._tools.get(name)
 
     def list_all(self) -> list[dict]:
@@ -56,9 +56,14 @@ class MCPToolRegistry:
                 "function": {
                     "name": name,
                     "description": info["definition"].get("description", ""),
-                    "parameters": info["definition"].get("inputSchema", {
-                        "type": "object", "properties": {}, "required": [],
-                    }),
+                    "parameters": info["definition"].get(
+                        "inputSchema",
+                        {
+                            "type": "object",
+                            "properties": {},
+                            "required": [],
+                        },
+                    ),
                 },
             }
             for name, info in self._tools.items()

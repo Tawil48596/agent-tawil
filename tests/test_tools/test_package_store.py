@@ -51,8 +51,9 @@ def test_rejects_cross_platform_unsafe_archive_paths(tmp_path, entry):
         store.install(data, manifest)
 
 
-@pytest.mark.parametrize("name,version", [("../demo", "1.0.0"), ("demo", "../1.0.0"),
-                                            ("C:demo", "1.0.0")])
+@pytest.mark.parametrize(
+    "name,version", [("../demo", "1.0.0"), ("demo", "../1.0.0"), ("C:demo", "1.0.0")]
+)
 def test_rejects_unsafe_manifest_identifiers(tmp_path, name, version):
     store = ToolPackageStore(tmp_path)
     data = package({"tool.py": "safe"})

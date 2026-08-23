@@ -6,7 +6,6 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, SecretStr
 
-
 router = APIRouter(prefix="/api/v1/runtime/providers", tags=["runtime-config"])
 SUPPORTED_PROVIDERS = {"openai", "anthropic", "deepseek"}
 
@@ -20,9 +19,13 @@ def _require_local_request(request: Request) -> None:
     host = request.client.host if request.client else ""
     try:
         if not ip_address(host).is_loopback:
-            raise HTTPException(403, "Runtime provider configuration is only available from localhost")
+            raise HTTPException(
+                403, "Runtime provider configuration is only available from localhost"
+            )
     except ValueError as exc:
-        raise HTTPException(403, "Runtime provider configuration is only available from localhost") from exc
+        raise HTTPException(
+            403, "Runtime provider configuration is only available from localhost"
+        ) from exc
 
 
 def _router(request: Request):

@@ -1,16 +1,17 @@
 """Persistent multi-agent orchestration with recovery, quotas and cancellation."""
 
 import asyncio
+import contextlib
 import json
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
-from typing import Callable, Optional
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -19,7 +20,7 @@ class TaskStatus(str, Enum):
     WAITING_APPROVAL = "waiting_approval"
 
 
-class OrchestrationMode(str, Enum):
+class OrchestrationMode(StrEnum):
     PARALLEL = "parallel"
     CHAIN = "chain"
     HIERARCHICAL = "hierarchical"
@@ -31,17 +32,17 @@ class SubTask:
     goal: str = ""
     context: str = ""
     toolsets: list[str] = field(default_factory=list)
-    model: Optional[str] = None
+    model: str | None = None
     max_turns: int = 30
     timeout: int = 120
     retry_attempts: int = 2
     status: TaskStatus = TaskStatus.PENDING
-    result: Optional[str] = None
-    error: Optional[str] = None
-    agent_id: Optional[str] = None
-    started_at: Optional[float] = None
-    completed_at: Optional[float] = None
-    parent_id: Optional[str] = None
+    result: str | None = None
+    error: str | None = None
+    agent_id: str | None = None
+    started_at: float | None = None
+    completed_at: float | None = None
+    parent_id: str | None = None
     dependencies: list[str] = field(default_factory=list)
     checkpoint_key: str = ""
     progress: float = 0.0
@@ -57,13 +58,17 @@ class OrchestrationPlan:
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     status: TaskStatus = TaskStatus.PENDING
-    aggregate_result: Optional[str] = None
+    aggregate_result: str | None = None
 
 
 class Orchestrator:
-    def __init__(self, agent_engine=None, max_workers: int = 10,
-                 storage_path: str | Path = "data/orchestration/plans.json",
-                 max_tasks_per_plan: int = 20):
+    def __init__(
+        self,
+        agent_engine=None,
+        max_workers: int = 10,
+        storage_path: str | Path = "data/orchestration/plans.json",
+        max_tasks_per_plan: int = 20,
+    ):
         self._engine = agent_engine
         self._max_workers = max_workers
         self._max_tasks_per_plan = max_tasks_per_plan
@@ -78,15 +83,19 @@ class Orchestrator:
         data = asdict(plan)
         data["mode"] = plan.mode.value
         data["status"] = plan.status.value
-        for item, task in zip(data["tasks"], plan.tasks):
+        for item, task in zip(data["tasks"], plan.tasks, strict=False):
             item["status"] = task.status.value
         return data
 
     def _persist(self) -> None:
         self._storage_path.parent.mkdir(parents=True, exist_ok=True)
         temp = self._storage_path.with_suffix(".tmp")
-        temp.write_text(json.dumps([self._serialize(p) for p in self._plans.values()],
-                                   ensure_ascii=False, indent=2), encoding="utf-8")
+        temp.write_text(
+            json.dumps(
+                [self._serialize(p) for p in self._plans.values()], ensure_ascii=False, indent=2
+            ),
+            encoding="utf-8",
+        )
         temp.replace(self._storage_path)
 
     def _load(self) -> None:
@@ -132,8 +141,9 @@ class Orchestrator:
         if any(dep not in ids for task in tasks for dep in task.dependencies):
             raise ValueError("Task dependency does not exist")
 
-    async def create_plan(self, title: str, mode: OrchestrationMode,
-                          tasks: list[SubTask]) -> OrchestrationPlan:
+    async def create_plan(
+        self, title: str, mode: OrchestrationMode, tasks: list[SubTask]
+    ) -> OrchestrationPlan:
         self._validate(title, tasks)
         plan = OrchestrationPlan(title=title, mode=mode, tasks=tasks)
         self._plans[plan.id] = plan
@@ -160,8 +170,11 @@ class Orchestrator:
             else:
                 await self._execute_parallel(plan)
             if plan.status != TaskStatus.CANCELLED:
-                plan.status = (TaskStatus.FAILED if any(t.status == TaskStatus.FAILED for t in plan.tasks)
-                               else TaskStatus.COMPLETED)
+                plan.status = (
+                    TaskStatus.FAILED
+                    if any(t.status == TaskStatus.FAILED for t in plan.tasks)
+                    else TaskStatus.COMPLETED
+                )
         except asyncio.CancelledError:
             plan.status = TaskStatus.CANCELLED
             raise
@@ -230,10 +243,14 @@ class Orchestrator:
                 task.attempt_count += 1
                 try:
                     if self._engine:
-                        response = await asyncio.wait_for(self._engine.run(
-                            user_message=task.goal, override_model=task.model,
-                            history=[{"role": "system", "content": task.context}]),
-                            timeout=task.timeout)
+                        response = await asyncio.wait_for(
+                            self._engine.run(
+                                user_message=task.goal,
+                                override_model=task.model,
+                                history=[{"role": "system", "content": task.context}],
+                            ),
+                            timeout=task.timeout,
+                        )
                         task.result = response.text
                     else:
                         task.result = f"[Simulated] {task.goal}"
@@ -250,14 +267,12 @@ class Orchestrator:
                         task.status = TaskStatus.FAILED
                         task.error = str(exc)
                     else:
-                        await asyncio.sleep(2 ** attempt)
+                        await asyncio.sleep(2**attempt)
             plan.updated_at = time.time()
             self._persist()
             for callback in self._on_task_complete:
-                try:
+                with contextlib.suppress(Exception):
                     callback(task)
-                except Exception:
-                    pass
 
     async def aggregate(self, plan_id: str, strategy: str = "concat") -> str:
         plan = self._require_plan(plan_id)
@@ -273,10 +288,10 @@ class Orchestrator:
     def on_task_complete(self, callback: Callable) -> None:
         self._on_task_complete.append(callback)
 
-    def get_plan(self, plan_id: str) -> Optional[OrchestrationPlan]:
+    def get_plan(self, plan_id: str) -> OrchestrationPlan | None:
         return self._plans.get(plan_id)
 
-    def get_progress(self, plan_id: str) -> Optional[float]:
+    def get_progress(self, plan_id: str) -> float | None:
         plan = self._plans.get(plan_id)
         if not plan or not plan.tasks:
             return None
@@ -284,12 +299,21 @@ class Orchestrator:
         return sum(1 for task in plan.tasks if task.status in terminal) / len(plan.tasks)
 
     def list_plans(self) -> list[dict]:
-        return [{"id": p.id, "title": p.title, "mode": p.mode.value,
-                 "status": p.status.value, "tasks": len(p.tasks),
-                 "completed": sum(t.status == TaskStatus.COMPLETED for t in p.tasks),
-                 "failed": sum(t.status == TaskStatus.FAILED for t in p.tasks),
-                 "progress": self.get_progress(p.id), "created_at": p.created_at,
-                 "updated_at": p.updated_at} for p in self._plans.values()]
+        return [
+            {
+                "id": p.id,
+                "title": p.title,
+                "mode": p.mode.value,
+                "status": p.status.value,
+                "tasks": len(p.tasks),
+                "completed": sum(t.status == TaskStatus.COMPLETED for t in p.tasks),
+                "failed": sum(t.status == TaskStatus.FAILED for t in p.tasks),
+                "progress": self.get_progress(p.id),
+                "created_at": p.created_at,
+                "updated_at": p.updated_at,
+            }
+            for p in self._plans.values()
+        ]
 
     def limits(self) -> dict:
         return {"max_workers": self._max_workers, "max_tasks_per_plan": self._max_tasks_per_plan}

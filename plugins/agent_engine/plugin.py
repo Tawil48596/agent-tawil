@@ -19,15 +19,11 @@ class AgentEnginePlugin(PluginProtocol):
         return ["conversation", "memory"]
 
     async def on_load(self, container):
-        from plugins.agent_engine.model_router import ModelRouter
-        from plugins.agent_engine.engine import AgentEngine
-
-        config = container.resolve("config")
-        self.router = ModelRouter(config)
-        self.engine = AgentEngine(self.router, config.get("agent", {}))
-
-        container.register("ModelRouter", self.router)
-        container.register("AgentEngine", self.engine)
+        if container is None:
+            raise RuntimeError("Agent engine plugin requires the runtime container")
+        self.router = container.resolve("ModelRouter")
+        self.engine = container.resolve("AgentEngine")
+        self.dispatcher = container.resolve("ToolDispatcher")
 
     async def on_enable(self):
         pass
@@ -39,4 +35,9 @@ class AgentEnginePlugin(PluginProtocol):
         return {
             "agent_engine": self.engine,
             "model_router": self.router,
+            "tool_dispatcher": self.dispatcher,
         }
+
+
+def create_plugin() -> AgentEnginePlugin:
+    return AgentEnginePlugin()

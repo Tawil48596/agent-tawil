@@ -2,7 +2,6 @@
 
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -10,7 +9,7 @@ class FilterResult:
     passed: bool
     risk_level: str = "none"  # none | low | medium | high | critical
     warnings: list[str] = field(default_factory=list)
-    sanitized: Optional[str] = None  # 净化后的文本
+    sanitized: str | None = None  # 净化后的文本
 
 
 class ContentFilter:
@@ -82,8 +81,9 @@ class ContentFilter:
         if risk == "critical":
             return FilterResult(passed=False, risk_level=risk, warnings=warnings)
         elif risk == "high":
-            return FilterResult(passed=False, risk_level=risk, warnings=warnings,
-                              sanitized=self._sanitize(text))
+            return FilterResult(
+                passed=False, risk_level=risk, warnings=warnings, sanitized=self._sanitize(text)
+            )
         else:
             return FilterResult(passed=True, risk_level=risk, warnings=warnings)
 

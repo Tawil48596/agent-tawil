@@ -1,8 +1,7 @@
 """Telegram Bot 适配器"""
 
-import json
 import os
-from typing import Any, Callable, Optional
+from collections.abc import Callable
 
 import structlog
 
@@ -16,7 +15,7 @@ class TelegramAdapter:
 
     def __init__(self, token: str = None):
         self._token = token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
-        self._message_handler: Optional[Callable] = None
+        self._message_handler: Callable | None = None
         self._running = False
         self._offset = 0
 
@@ -36,10 +35,10 @@ class TelegramAdapter:
     async def stop(self):
         self._running = False
 
-    async def send_message(self, chat_id: str, text: str,
-                            parse_mode: str = "Markdown") -> dict:
+    async def send_message(self, chat_id: str, text: str, parse_mode: str = "Markdown") -> dict:
         """发送消息"""
         import httpx
+
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 f"{self.BASE_URL}/bot{self._token}/sendMessage",
@@ -54,6 +53,7 @@ class TelegramAdapter:
     async def poll_updates(self) -> list[dict]:
         """获取新消息"""
         import httpx
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
                 f"{self.BASE_URL}/bot{self._token}/getUpdates",

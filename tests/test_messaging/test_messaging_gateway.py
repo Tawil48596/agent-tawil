@@ -9,8 +9,10 @@ from plugins.messaging.gateway import MessagingGateway
 
 @pytest.mark.asyncio
 async def test_authenticated_message_has_stable_session_and_dedupes(tmp_path):
-    gateway = MessagingGateway({"webhook_secrets": {"slack": "secret"},
-        "allowed_senders": {"slack": ["u1"]}}, tmp_path / "sessions.json")
+    gateway = MessagingGateway(
+        {"webhook_secrets": {"slack": "secret"}, "allowed_senders": {"slack": ["u1"]}},
+        tmp_path / "sessions.json",
+    )
     event = {"event_id": "e1", "event": {"channel": "c1", "user": "u1", "text": "hello"}}
     payload = json.dumps(event).encode()
     signature = hmac.new(b"secret", payload, hashlib.sha256).hexdigest()

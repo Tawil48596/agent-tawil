@@ -1,7 +1,6 @@
 """技能加载器 — 从文件加载自定义指令/工作流"""
 
 from pathlib import Path
-from typing import Optional
 
 
 class SkillLoader:
@@ -15,11 +14,9 @@ class SkillLoader:
         """列出所有可用技能"""
         if not self._skills_dir.exists():
             return []
-        return [
-            p.stem for p in self._skills_dir.glob("*.md")
-        ]
+        return [p.stem for p in self._skills_dir.glob("*.md")]
 
-    def load_skill(self, name: str) -> Optional[str]:
+    def load_skill(self, name: str) -> str | None:
         """加载单个技能内容"""
         if name in self._cache:
             return self._cache[name]

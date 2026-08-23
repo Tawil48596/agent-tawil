@@ -17,15 +17,26 @@ class PDFSource:
 
         try:
             from pypdf import PdfReader
+
             reader = PdfReader(str(path))
             pages = []
             for i, page in enumerate(reader.pages):
                 text = page.extract_text()
                 if text:
-                    pages.append({"content": text, "metadata": {"source": str(path), "page": i + 1, "type": "pdf"}})
+                    pages.append(
+                        {
+                            "content": text,
+                            "metadata": {"source": str(path), "page": i + 1, "type": "pdf"},
+                        }
+                    )
             return pages
         except ImportError:
-            return [{"content": f"pypdf not installed. Cannot parse: {file_path}", "metadata": {"source": str(path)}}]
+            return [
+                {
+                    "content": f"pypdf not installed. Cannot parse: {file_path}",
+                    "metadata": {"source": str(path)},
+                }
+            ]
         except Exception as e:
             logger.warning("PDF parse failed", path=str(path), error=str(e))
             return []

@@ -4,7 +4,6 @@
 """
 
 import re
-from typing import Optional
 
 
 class CodeAwareChunker:
@@ -28,9 +27,10 @@ class CodeAwareChunker:
         try:
             import tree_sitter_python
             from tree_sitter import Language, Parser
-            PY_LANG = Language(tree_sitter_python.language())
-            self._parser = Parser(PY_LANG)
-            self._language = PY_LANG
+
+            python_language = Language(tree_sitter_python.language())
+            self._parser = Parser(python_language)
+            self._language = python_language
         except ImportError:
             self._parser = None
 
@@ -50,8 +50,12 @@ class CodeAwareChunker:
         imports = self._extract_imports(root)
 
         for node in root.children:
-            if node.type in ("function_definition", "class_definition",
-                             "decorated_definition", "async_function_definition"):
+            if node.type in (
+                "function_definition",
+                "class_definition",
+                "decorated_definition",
+                "async_function_definition",
+            ):
                 # 提取函数/类的完整代码块
                 chunk_text = node.text.decode("utf-8")
 
@@ -77,16 +81,14 @@ class CodeAwareChunker:
         chunks = []
         lines = code.split("\n")
         current = []
-        current_header = ""
 
         for line in lines:
-            stripped = line.strip()
+            line.strip()
             # 检测函数/类定义
             if re.match(r"^\s*(def |class |async def |export |function |public class )", line):
                 if current:
                     chunks.append("\n".join(current))
                 current = [line]
-                current_header = stripped
             else:
                 current.append(line)
 
@@ -94,7 +96,7 @@ class CodeAwareChunker:
             chunks.append("\n".join(current))
 
         # 提取 import 语句作为独立 chunk
-        imports = [l for l in lines if re.match(r"^\s*(import |from \w+ import)", l)]
+        imports = [line for line in lines if re.match(r"^\s*(import |from \w+ import)", line)]
         if imports and len(chunks) > 1:
             chunks.insert(0, "\n".join(imports))
 
@@ -108,7 +110,7 @@ class CodeAwareChunker:
                 imports.append(child.text.decode("utf-8"))
         return imports
 
-    def _get_node_context(self, node) -> Optional[str]:
+    def _get_node_context(self, node) -> str | None:
         """获取节点的上下文 (父类名等)"""
         parent = node.parent
         if parent and parent.type == "class_definition":

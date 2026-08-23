@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from core.di_container import DIContainer
+
+JsonObject = dict[str, Any]
+JsonList = list[JsonObject]
 
 
 class PluginProtocol(ABC):
@@ -27,15 +31,15 @@ class PluginProtocol(ABC):
         """依赖的其他插件名"""
         return []
 
-    async def on_load(self, container: "DIContainer") -> None:
+    async def on_load(self, container: DIContainer | None) -> None:  # noqa: B027
         """插件加载时调用，获取依赖"""
         pass
 
-    async def on_enable(self) -> None:
+    async def on_enable(self) -> None:  # noqa: B027
         """插件启用：注册事件监听、启动后台任务"""
         pass
 
-    async def on_disable(self) -> None:
+    async def on_disable(self) -> None:  # noqa: B027
         """插件禁用：清理资源、取消监听"""
         pass
 
@@ -43,11 +47,11 @@ class PluginProtocol(ABC):
         """暴露给外部的扩展点接口"""
         return {}
 
-    def get_commands(self) -> list[dict]:
+    def get_commands(self) -> JsonList:
         """暴露 CLI / slash 命令"""
         return []
 
-    def get_api_routes(self) -> list[dict]:
+    def get_api_routes(self) -> JsonList:
         """暴露 REST API 路由"""
         return []
 
@@ -56,46 +60,47 @@ class LLMProviderProtocol(ABC):
     """LLM Provider 扩展点"""
 
     @abstractmethod
-    async def chat(self, messages: list[dict], tools: list[dict] | None = None, **kwargs) -> Any:
-        ...
+    async def chat(
+        self,
+        messages: JsonList,
+        tools: JsonList | None = None,
+        **kwargs: Any,
+    ) -> Any: ...
 
     @abstractmethod
-    async def stream_chat(self, messages: list[dict], tools: list[dict] | None = None, **kwargs) -> AsyncIterator[str]:
-        ...
+    async def stream_chat(
+        self,
+        messages: JsonList,
+        tools: JsonList | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[str]: ...
 
     @property
     @abstractmethod
-    def context_length(self) -> int:
-        ...
+    def context_length(self) -> int: ...
 
     @property
     @abstractmethod
-    def supports_vision(self) -> bool:
-        ...
+    def supports_vision(self) -> bool: ...
 
 
 class MemoryBackendProtocol(ABC):
     """记忆存储后端扩展点"""
 
     @abstractmethod
-    async def save(self, entry: dict) -> str:
-        ...
+    async def save(self, entry: JsonObject) -> str: ...
 
     @abstractmethod
-    async def search(self, query: str, limit: int = 10, **filters) -> list[dict]:
-        ...
+    async def search(self, query: str, limit: int = 10, **filters: Any) -> JsonList: ...
 
     @abstractmethod
-    async def get(self, entry_id: str) -> dict | None:
-        ...
+    async def get(self, entry_id: str) -> JsonObject | None: ...
 
     @abstractmethod
-    async def delete(self, entry_id: str) -> bool:
-        ...
+    async def delete(self, entry_id: str) -> bool: ...
 
     @abstractmethod
-    async def clear(self) -> None:
-        ...
+    async def clear(self) -> None: ...
 
 
 class ToolProtocol(ABC):
@@ -103,93 +108,84 @@ class ToolProtocol(ABC):
 
     @property
     @abstractmethod
-    def definition(self) -> dict:
-        ...
+    def definition(self) -> JsonObject: ...
 
     @abstractmethod
-    async def execute(self, **params) -> str:
-        ...
+    async def execute(self, **params: Any) -> str: ...
 
     @abstractmethod
-    async def check_availability(self) -> bool:
-        ...
+    async def check_availability(self) -> bool: ...
 
 
 class PlatformAdapterProtocol(ABC):
     """消息平台适配器扩展点"""
 
     @abstractmethod
-    async def start(self) -> None:
-        ...
+    async def start(self) -> None: ...
 
     @abstractmethod
-    async def stop(self) -> None:
-        ...
+    async def stop(self) -> None: ...
 
     @abstractmethod
-    async def send_message(self, chat_id: str, text: str, **options) -> str:
-        ...
+    async def send_message(self, chat_id: str, text: str, **options: Any) -> str: ...
 
     @abstractmethod
-    async def on_message(self, handler: Callable) -> None:
-        ...
+    async def on_message(self, handler: Callable[..., Any]) -> None: ...
 
 
 class SessionStoreProtocol(ABC):
     """会话存储扩展点"""
 
     @abstractmethod
-    async def create(self, **kwargs) -> dict:
-        ...
+    async def create(self, **kwargs: Any) -> JsonObject: ...
 
     @abstractmethod
-    async def get(self, session_id: str) -> dict | None:
-        ...
+    async def get(self, session_id: str) -> JsonObject | None: ...
 
     @abstractmethod
-    async def update(self, session_id: str, **kwargs) -> dict:
-        ...
+    async def update(self, session_id: str, **kwargs: Any) -> JsonObject: ...
 
     @abstractmethod
-    async def delete(self, session_id: str) -> bool:
-        ...
+    async def delete(self, session_id: str) -> bool: ...
 
     @abstractmethod
-    async def list(self, limit: int = 50, offset: int = 0, **filters) -> list[dict]:
-        ...
+    async def list(self, limit: int = 50, offset: int = 0, **filters: Any) -> JsonList: ...
 
     @abstractmethod
-    async def add_message(self, session_id: str, role: str, content: str, **kwargs) -> dict:
-        ...
+    async def add_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        **kwargs: Any,
+    ) -> JsonObject: ...
 
     @abstractmethod
-    async def get_messages(self, session_id: str, limit: int = 100, offset: int = 0) -> list[dict]:
-        ...
+    async def get_messages(
+        self, session_id: str, limit: int = 100, offset: int = 0
+    ) -> JsonList: ...
 
 
 class RAGEngineProtocol(ABC):
     """RAG 引擎扩展点"""
 
     @abstractmethod
-    async def query(self, query: str, knowledge_bases: list[str], top_k: int = 5) -> list[dict]:
-        ...
+    async def query(self, query: str, knowledge_bases: list[str], top_k: int = 5) -> JsonList: ...
 
     @abstractmethod
-    async def index(self, documents: list[dict], knowledge_base_id: str) -> None:
-        ...
+    async def index(self, documents: JsonList, knowledge_base_id: str) -> None: ...
 
     @abstractmethod
-    async def delete_knowledge_base(self, kb_id: str) -> bool:
-        ...
+    async def delete_knowledge_base(self, kb_id: str) -> bool: ...
 
 
 class AgentEngineProtocol(ABC):
     """Agent 引擎扩展点"""
 
     @abstractmethod
-    async def run(self, user_message: str, session: dict, **context) -> dict:
-        ...
+    async def run(self, user_message: str, session: JsonObject, **context: Any) -> JsonObject: ...
 
     @abstractmethod
-    async def run_stream(self, user_message: str, session: dict, **context) -> AsyncIterator[dict]:
-        ...
+    async def run_stream(
+        self, user_message: str, session: JsonObject, **context: Any
+    ) -> AsyncIterator[JsonObject]: ...

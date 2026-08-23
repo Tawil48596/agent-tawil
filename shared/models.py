@@ -1,7 +1,7 @@
 """核心数据模型"""
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -16,10 +16,10 @@ def new_id() -> str:
 
 class Session(BaseModel):
     id: str = Field(default_factory=new_id)
-    title: Optional[str] = None
+    title: str | None = None
     source: str = "web"
-    profile: Optional[str] = None
-    parent_id: Optional[str] = None  # 分支来源
+    profile: str | None = None
+    parent_id: str | None = None  # 分支来源
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -31,18 +31,18 @@ class Session(BaseModel):
 class ToolCall(BaseModel):
     name: str
     args: dict[str, Any]
-    result: Optional[str] = None
+    result: str | None = None
     status: str = "pending"  # pending | running | done | error
 
 
 class Message(BaseModel):
-    id: Optional[int] = None
+    id: int | None = None
     session_id: str
-    parent_msg_id: Optional[int] = None  # 分支点
+    parent_msg_id: int | None = None  # 分支点
     role: str  # user | assistant | tool | system
-    content: Optional[str] = None
+    content: str | None = None
     tool_calls: list[ToolCall] = Field(default_factory=list)
-    token_count: Optional[int] = None
+    token_count: int | None = None
     created_at: datetime = Field(default_factory=datetime.now)
 
 
@@ -52,14 +52,14 @@ class Message(BaseModel):
 class MemoryEntry(BaseModel):
     id: str = Field(default_factory=new_id)
     content: str
-    embedding: Optional[list[float]] = None
+    embedding: list[float] | None = None
     type: str = "fact"  # fact | preference | event | lesson
     importance: float = 0.5
-    source_session: Optional[str] = None
+    source_session: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
     last_accessed_at: datetime = Field(default_factory=datetime.now)
     access_count: int = 0
-    ttl: Optional[int] = None
+    ttl: int | None = None
 
 
 # ── Tool ──
@@ -86,7 +86,7 @@ class SubAgentConfig(BaseModel):
     goal: str
     context: str = ""
     toolsets: list[str] = Field(default_factory=list)
-    model: Optional[str] = None
+    model: str | None = None
     max_turns: int = 50
     role: str = "leaf"  # leaf | orchestrator
     timeout: int = 300
@@ -96,7 +96,9 @@ class SubAgentConfig(BaseModel):
 
 class AgentResponse(BaseModel):
     text: str
-    stop_reason: str = "complete"  # complete | max_turns | tool_error | content_filter | user_interrupt | timeout
+    stop_reason: str = (
+        "complete"  # complete | max_turns | tool_error | content_filter | user_interrupt | timeout
+    )
     usage: dict[str, int] = Field(default_factory=dict)
     tool_calls: list[ToolCall] = Field(default_factory=list)
 

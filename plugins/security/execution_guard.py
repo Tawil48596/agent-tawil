@@ -2,9 +2,9 @@
 
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -12,8 +12,8 @@ class ExecutionDecision:
     allowed: bool
     requires_approval: bool = False
     reason: str = ""
-    sanitized_command: Optional[str] = None
-    resource_limits: Optional[dict[str, Any]] = None
+    sanitized_command: str | None = None
+    resource_limits: dict[str, Any] | None = None
 
 
 class ExecutionGuard:

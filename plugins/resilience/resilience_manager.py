@@ -1,27 +1,27 @@
 """服务降级与熔断器 — 三级降级 + 自动恢复"""
 
-import asyncio
 import inspect
 import time
-from dataclasses import dataclass, field
-from enum import Enum
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import StrEnum
 from functools import wraps
-from typing import Any, Callable, Optional
 
 
-class CircuitState(str, Enum):
-    CLOSED = "closed"          # 正常
-    HALF_OPEN = "half_open"    # 半开 (试探)
-    OPEN = "open"              # 熔断
+class CircuitState(StrEnum):
+    CLOSED = "closed"  # 正常
+    HALF_OPEN = "half_open"  # 半开 (试探)
+    OPEN = "open"  # 熔断
 
 
 @dataclass
 class CircuitBreaker:
     """熔断器"""
+
     name: str
-    failure_threshold: int = 5      # 连续失败 N 次 → 熔断
-    recovery_timeout: int = 30      # 熔断后 N 秒 → 半开
-    half_open_max_requests: int = 2 # 半开时允许的试探请求数
+    failure_threshold: int = 5  # 连续失败 N 次 → 熔断
+    recovery_timeout: int = 30  # 熔断后 N 秒 → 半开
+    half_open_max_requests: int = 2  # 半开时允许的试探请求数
 
     _state: CircuitState = CircuitState.CLOSED
     _failure_count: int = 0
@@ -30,10 +30,12 @@ class CircuitBreaker:
 
     @property
     def state(self) -> CircuitState:
-        if self._state == CircuitState.OPEN:
-            if time.time() - self._last_failure_time > self.recovery_timeout:
-                self._state = CircuitState.HALF_OPEN
-                self._half_open_requests = 0
+        if (
+            self._state == CircuitState.OPEN
+            and time.time() - self._last_failure_time > self.recovery_timeout
+        ):
+            self._state = CircuitState.HALF_OPEN
+            self._half_open_requests = 0
         return self._state
 
     def success(self):
@@ -48,23 +50,21 @@ class CircuitBreaker:
     def failure(self):
         self._failure_count += 1
         self._last_failure_time = time.time()
-        if self._state == CircuitState.HALF_OPEN:
-            self._state = CircuitState.OPEN
-        elif self._failure_count >= self.failure_threshold:
+        if self._state == CircuitState.HALF_OPEN or self._failure_count >= self.failure_threshold:
             self._state = CircuitState.OPEN
 
 
-class DegradationLevel(str, Enum):
-    NONE = "none"            # 无降级
-    L1_MODEL = "l1_model"    # 模型降级 (切换备用 Provider)
-    L2_TOOL = "l2_tool"      # 工具降级 (本地快照模式)
+class DegradationLevel(StrEnum):
+    NONE = "none"  # 无降级
+    L1_MODEL = "l1_model"  # 模型降级 (切换备用 Provider)
+    L2_TOOL = "l2_tool"  # 工具降级 (本地快照模式)
     L3_RETRIEVAL = "l3_retrieval"  # 检索降级 (向量 → BM25)
 
 
 @dataclass
 class DegradationResult:
     level: DegradationLevel
-    original_error: Optional[str] = None
+    original_error: str | None = None
     degraded: bool = False
     message: str = ""
 
@@ -74,7 +74,7 @@ class ResilienceManager:
 
     def __init__(self, config: dict = None):
         cfg = config or {}
-        resilience_cfg = cfg.get("resilience", {}) if isinstance(cfg, dict) else {}
+        cfg.get("resilience", {}) if isinstance(cfg, dict) else {}
 
         self._circuits: dict[str, CircuitBreaker] = {}
         for name in ["github_mcp", "web_search", "embedding", "reranker"]:
@@ -88,7 +88,7 @@ class ResilienceManager:
     async def call_with_degradation(
         self,
         primary: Callable,
-        fallback: Optional[Callable] = None,
+        fallback: Callable | None = None,
         circuit_name: str = "",
         degradation_level: DegradationLevel = DegradationLevel.L2_TOOL,
     ) -> DegradationResult:
@@ -99,21 +99,23 @@ class ResilienceManager:
         if circuit and circuit.state == CircuitState.OPEN:
             if fallback:
                 try:
-                    result = await fallback() if inspect.iscoroutinefunction(fallback) else fallback()
+                    (await fallback() if inspect.iscoroutinefunction(fallback) else fallback())
                     return DegradationResult(
-                        level=degradation_level, degraded=True,
+                        level=degradation_level,
+                        degraded=True,
                         message=f"熔断中，已降级 ({circuit_name})",
                     )
                 except Exception:
                     pass
             return DegradationResult(
-                level=degradation_level, degraded=True,
+                level=degradation_level,
+                degraded=True,
                 message=f"服务不可用 ({circuit_name})",
             )
 
         # 尝试主逻辑
         try:
-            result = await primary() if inspect.iscoroutinefunction(primary) else primary()
+            await primary() if inspect.iscoroutinefunction(primary) else primary()
             if circuit:
                 circuit.success()
             return DegradationResult(level=DegradationLevel.NONE)
@@ -123,25 +125,29 @@ class ResilienceManager:
 
             if fallback:
                 try:
-                    result = await fallback() if inspect.iscoroutinefunction(fallback) else fallback()
+                    (await fallback() if inspect.iscoroutinefunction(fallback) else fallback())
                     return DegradationResult(
-                        level=degradation_level, degraded=True,
+                        level=degradation_level,
+                        degraded=True,
                         original_error=str(e),
                         message=f"已降级 ({degradation_level.value})",
                     )
-                except Exception as fb_e:
+                except Exception:
                     return DegradationResult(
-                        level=degradation_level, degraded=True,
+                        level=degradation_level,
+                        degraded=True,
                         original_error=str(e),
                     )
 
             return DegradationResult(
-                level=degradation_level, degraded=True,
+                level=degradation_level,
+                degraded=True,
                 original_error=str(e),
             )
 
     def wrap(self, circuit_name: str):
         """装饰器: 自动熔断保护"""
+
         def decorator(func):
             @wraps(func)
             async def wrapper(*args, **kwargs):
@@ -152,10 +158,12 @@ class ResilienceManager:
                     result = await func(*args, **kwargs)
                     circuit.success()
                     return result
-                except Exception as e:
+                except Exception:
                     circuit.failure()
                     raise
+
             return wrapper
+
         return decorator
 
 

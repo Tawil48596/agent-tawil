@@ -1,23 +1,22 @@
 """长期记忆 — ChromaDB / 内置 SQLite 向量存储 + 记忆衰减"""
 
+import contextlib
 import json
 import math
-import os
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
 class MemoryEntry:
     id: str
     content: str
-    embedding: Optional[list[float]] = None
-    type: str = "fact"          # fact | preference | event | lesson
+    embedding: list[float] | None = None
+    type: str = "fact"  # fact | preference | event | lesson
     importance: float = 0.5
-    source_session: Optional[str] = None
+    source_session: str | None = None
     source: str = "manual"
     user_id: str = "local"
     project_id: str = "default"
@@ -27,7 +26,7 @@ class MemoryEntry:
     updated_at: float = field(default_factory=time.time)
     last_accessed_at: float = field(default_factory=time.time)
     access_count: int = 0
-    ttl: Optional[int] = None   # 过期时间 (秒)
+    ttl: int | None = None  # 过期时间 (秒)
 
 
 class LongTermMemory:
@@ -99,6 +98,7 @@ class LongTermMemory:
     def _init_chromadb(self, config: dict):
         try:
             import chromadb
+
             chroma_cfg = config.get("vector_store", {}).get("chromadb", {})
             path = chroma_cfg.get("path", "./chroma_data")
             self._chroma_client = chromadb.PersistentClient(path=path)
@@ -129,23 +129,26 @@ class LongTermMemory:
                 return existing.id
         if not entry.id:
             import uuid
+
             entry.id = uuid.uuid4().hex[:12]
 
         if self._backend == "chromadb" and self._chroma_collection:
             self._chroma_collection.upsert(
                 ids=[entry.id],
                 documents=[entry.content],
-                metadatas=[{
-                    "type": entry.type,
-                    "importance": entry.importance,
-                    "source_session": entry.source_session or "",
-                    "source": entry.source,
-                    "user_id": entry.user_id,
-                    "project_id": entry.project_id,
-                    "tags": json.dumps(entry.tags, ensure_ascii=False),
-                    "confidence": entry.confidence,
-                    "created_at": entry.created_at,
-                }],
+                metadatas=[
+                    {
+                        "type": entry.type,
+                        "importance": entry.importance,
+                        "source_session": entry.source_session or "",
+                        "source": entry.source,
+                        "user_id": entry.user_id,
+                        "project_id": entry.project_id,
+                        "tags": json.dumps(entry.tags, ensure_ascii=False),
+                        "confidence": entry.confidence,
+                        "created_at": entry.created_at,
+                    }
+                ],
             )
 
         self._storage[entry.id] = entry
@@ -161,7 +164,7 @@ class LongTermMemory:
                 ids.append(eid)
         return ids
 
-    async def get(self, entry_id: str) -> Optional[MemoryEntry]:
+    async def get(self, entry_id: str) -> MemoryEntry | None:
         entry = self._storage.get(entry_id)
         if entry:
             entry.last_accessed_at = time.time()
@@ -173,20 +176,26 @@ class LongTermMemory:
         if entry_id in self._storage:
             del self._storage[entry_id]
         if self._chroma_collection:
-            try:
+            with contextlib.suppress(Exception):
                 self._chroma_collection.delete(ids=[entry_id])
-            except Exception:
-                pass
         self._persist_builtin()
         return True
 
-    async def update(self, entry_id: str, **changes: Any) -> Optional[MemoryEntry]:
+    async def update(self, entry_id: str, **changes: Any) -> MemoryEntry | None:
         entry = self._storage.get(entry_id)
         if not entry:
             return None
         allowed = {
-            "content", "type", "importance", "source_session", "source",
-            "user_id", "project_id", "tags", "confidence", "ttl",
+            "content",
+            "type",
+            "importance",
+            "source_session",
+            "source",
+            "user_id",
+            "project_id",
+            "tags",
+            "confidence",
+            "ttl",
         }
         for key, value in changes.items():
             if key in allowed and value is not None:
@@ -217,9 +226,7 @@ class LongTermMemory:
                         metadata={"hnsw:space": "cosine"},
                     )
                 else:
-                    where = self._chroma_where(
-                        None, user_id=user_id, project_id=project_id
-                    )
+                    where = self._chroma_where(None, user_id=user_id, project_id=project_id)
                     self._chroma_collection.delete(where=where)
             except Exception:
                 pass
@@ -238,13 +245,9 @@ class LongTermMemory:
         limit = limit or self._max_retrieved
 
         if self._backend == "chromadb" and self._chroma_collection:
-            return await self._search_chromadb(
-                query, limit, memory_type, user_id, project_id
-            )
+            return await self._search_chromadb(query, limit, memory_type, user_id, project_id)
         else:
-            return await self._search_builtin(
-                query, limit, memory_type, user_id, project_id
-            )
+            return await self._search_builtin(query, limit, memory_type, user_id, project_id)
 
     @staticmethod
     def _chroma_where(
@@ -252,7 +255,7 @@ class LongTermMemory:
         *,
         user_id: str = None,
         project_id: str = None,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         filters = []
         if memory_type:
             filters.append({"type": memory_type})
@@ -272,9 +275,7 @@ class LongTermMemory:
         user_id: str = None,
         project_id: str = None,
     ) -> list[MemoryEntry]:
-        where = self._chroma_where(
-            memory_type, user_id=user_id, project_id=project_id
-        )
+        where = self._chroma_where(memory_type, user_id=user_id, project_id=project_id)
 
         results = self._chroma_collection.query(
             query_texts=[query],
@@ -359,7 +360,8 @@ class LongTermMemory:
 
         # 删除衰减到阈值以下的
         to_delete = [
-            eid for eid, e in self._storage.items()
+            eid
+            for eid, e in self._storage.items()
             if e.importance < self._importance_threshold * 0.5
         ]
         for eid in to_delete:
@@ -384,13 +386,14 @@ class LongTermMemory:
         memory_type: str = None,
     ) -> list[MemoryEntry]:
         entries = [
-            entry for entry in self._storage.values()
+            entry
+            for entry in self._storage.values()
             if (not user_id or entry.user_id == user_id)
             and (not project_id or entry.project_id == project_id)
             and (not memory_type or entry.type == memory_type)
         ]
         entries.sort(key=lambda entry: entry.updated_at, reverse=True)
-        return entries[offset:offset + limit]
+        return entries[offset : offset + limit]
 
     def stats(self) -> dict:
         types = {}

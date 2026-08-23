@@ -32,5 +32,4 @@ async def tool_usage(request: Request):
 
 @router.get("/export")
 async def export_csv(request: Request, fmt: str = "csv"):
-    from plugins.analytics.exporter import DataExporter
     return {"format": fmt, "data": ""}

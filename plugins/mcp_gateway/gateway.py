@@ -3,7 +3,7 @@
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 import structlog
 
@@ -37,10 +37,15 @@ class MCPGateway:
         self._discovery = ServiceDiscovery()
         self._tool_call_timeout = mcp_cfg.get("tool_call_timeout", 30)
         security_cfg = dict(mcp_cfg.get("security", {}))
-        security_cfg.setdefault("require_approval", [
-            "github_clone_repo", "github_create_branch", "github_update_file",
-            "github_create_pull_request",
-        ])
+        security_cfg.setdefault(
+            "require_approval",
+            [
+                "github_clone_repo",
+                "github_create_branch",
+                "github_update_file",
+                "github_create_pull_request",
+            ],
+        )
         self._security = MCPSecurity(security_cfg)
 
     async def register_server(self, info: MCPServerInfo, adapter: Any = None) -> str:
@@ -75,7 +80,7 @@ class MCPGateway:
         self._servers.pop(server_id, None)
         self._tool_registry.unregister_source(server_id)
 
-    def get_server(self, server_id: str) -> Optional[MCPServerInfo]:
+    def get_server(self, server_id: str) -> MCPServerInfo | None:
         return self._servers.get(server_id)
 
     def list_servers(self) -> list[MCPServerInfo]:
@@ -86,36 +91,51 @@ class MCPGateway:
         return {"ok": False, "error": {"code": code, "message": message}, **extra}
 
     @staticmethod
-    def _validate_arguments(schema: dict[str, Any], arguments: dict[str, Any]) -> Optional[str]:
+    def _validate_arguments(schema: dict[str, Any], arguments: dict[str, Any]) -> str | None:
         if not isinstance(arguments, dict):
             return "arguments must be an object"
         for name in schema.get("required", []):
             if name not in arguments:
                 return f"missing required argument: {name}"
-        expected = {"string": str, "integer": int, "number": (int, float),
-                    "boolean": bool, "object": dict, "array": list}
+        expected = {
+            "string": str,
+            "integer": int,
+            "number": (int, float),
+            "boolean": bool,
+            "object": dict,
+            "array": list,
+        }
         for name, value in arguments.items():
             spec = schema.get("properties", {}).get(name, {})
             py_type = expected.get(spec.get("type"))
-            if py_type and (not isinstance(value, py_type) or
-                            spec.get("type") == "integer" and isinstance(value, bool)):
+            if py_type and (
+                not isinstance(value, py_type)
+                or spec.get("type") == "integer"
+                and isinstance(value, bool)
+            ):
                 return f"argument {name} must be {spec['type']}"
             if "enum" in spec and value not in spec["enum"]:
                 return f"argument {name} must be one of {spec['enum']}"
         return None
 
-    async def call_tool(self, tool_name: str, arguments: dict[str, Any],
-                        approved: bool = False) -> dict[str, Any]:
+    async def call_tool(
+        self, tool_name: str, arguments: dict[str, Any], approved: bool = False
+    ) -> dict[str, Any]:
         tool_info = self._tool_registry.get(tool_name)
         if not tool_info:
             return self._error("tool_not_found", f"Tool not found: {tool_name}")
         if not self._security.is_allowed(tool_name):
             return self._error("tool_forbidden", f"Tool is not allowed: {tool_name}")
         if self._security.needs_approval(tool_name) and not approved:
-            return self._error("approval_required", "Explicit approval is required",
-                               approval_required=True, tool=tool_name)
+            return self._error(
+                "approval_required",
+                "Explicit approval is required",
+                approval_required=True,
+                tool=tool_name,
+            )
         validation_error = self._validate_arguments(
-            tool_info["definition"].get("inputSchema", {}), arguments)
+            tool_info["definition"].get("inputSchema", {}), arguments
+        )
         if validation_error:
             return self._error("invalid_arguments", validation_error)
 
@@ -126,16 +146,22 @@ class MCPGateway:
             return self._error("server_disconnected", f"Server not connected: {server_id}")
         started = time.monotonic()
         try:
-            call = (adapter.call_tool(tool_name, arguments) if adapter
-                    else client.call_tool(tool_name, arguments))
+            call = (
+                adapter.call_tool(tool_name, arguments)
+                if adapter
+                else client.call_tool(tool_name, arguments)
+            )
             result = await asyncio.wait_for(call, timeout=self._tool_call_timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return self._error("tool_timeout", f"Tool exceeded {self._tool_call_timeout}s timeout")
         except Exception as exc:
             logger.exception("MCP tool call failed", tool=tool_name, server=server_id)
             return self._error("tool_call_failed", str(exc))
-        meta = {"tool": tool_name, "server": server_id,
-                "duration_ms": round((time.monotonic() - started) * 1000, 2)}
+        meta = {
+            "tool": tool_name,
+            "server": server_id,
+            "duration_ms": round((time.monotonic() - started) * 1000, 2),
+        }
         if isinstance(result, dict):
             result.setdefault("_meta", meta)
             return result
@@ -166,9 +192,12 @@ class MCPGateway:
 
     def health(self) -> dict[str, Any]:
         servers = self.list_servers()
-        return {"status": "ok" if all(s.status == "connected" for s in servers) else "degraded",
-                "servers": [{"id": s.id, "status": s.status, "tools_count": s.tools_count}
-                            for s in servers]}
+        return {
+            "status": "ok" if all(s.status == "connected" for s in servers) else "degraded",
+            "servers": [
+                {"id": s.id, "status": s.status, "tools_count": s.tools_count} for s in servers
+            ],
+        }
 
     def list_all_tools(self) -> list[dict]:
         return self._tool_registry.list_all()

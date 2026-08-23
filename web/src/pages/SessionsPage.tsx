@@ -14,10 +14,8 @@ export function SessionsPage() {
   const navigate = useNavigate();
 
   const removeSession = async (
-    event: React.MouseEvent,
     sessionId: string,
   ) => {
-    event.stopPropagation();
     if (!window.confirm("删除这个对话？此操作无法撤销。")) return;
     await deleteSession(sessionId);
     if (activeId === sessionId) navigate("/");
@@ -36,29 +34,23 @@ export function SessionsPage() {
 
       <div className="space-y-2 max-w-4xl">
         {sessions.map((session) => (
-          <div
-            key={session.id}
-            onClick={() => {
-              selectSession(session.id);
-              navigate(`/chat/${session.id}`);
-            }}
-            className="group bg-[#1a1d27] border border-[#2a2d3a] rounded-xl p-4 cursor-pointer hover:border-[#6c8cff] flex items-center justify-between gap-4 transition"
-          >
-            <div className="min-w-0">
-              <div className="text-sm font-medium truncate">
+          <div key={session.id} className="group flex items-center gap-2 rounded-xl border border-[#2a2d3a] bg-[#1a1d27] p-2 transition hover:border-[#6c8cff]">
+            <button type="button" onClick={() => { void selectSession(session.id); navigate(`/chat/${session.id}`); }} className="min-w-0 flex-1 p-2 text-left">
+              <span className="block truncate text-sm font-medium">
                 {session.title || "新对话"}
-              </div>
-              <div className="text-xs text-[#8b8fa3] mt-1 flex items-center gap-2">
-                <Clock3 size={12} />
+              </span>
+              <span className="mt-1 flex items-center gap-2 text-xs text-[#8b8fa3]">
+                <Clock3 size={12} aria-hidden="true" />
                 {formatTime(session.updated_at || session.created_at)}
                 {typeof session.message_count === "number" && (
                   <span>· {session.message_count} 条消息</span>
                 )}
-              </div>
-            </div>
+              </span>
+            </button>
             <button
+              type="button"
               aria-label={`删除对话 ${session.title || "新对话"}`}
-              onClick={(event) => removeSession(event, session.id)}
+              onClick={() => void removeSession(session.id)}
               className="opacity-60 group-hover:opacity-100 text-[#8b8fa3] hover:text-[#f87171] p-2 rounded-lg hover:bg-[#f87171]/10 transition"
             >
               <Trash2 size={15} />

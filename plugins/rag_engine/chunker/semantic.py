@@ -27,7 +27,6 @@ class SemanticChunker:
 
         # 简化版：每个 parent 包含的子 sections 作为 children
         result = []
-        idx = 0
         for parent in parents:
             child_count = max(1, len(parent) // self._child_char_size)
             children = []

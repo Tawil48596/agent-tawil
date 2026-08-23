@@ -1,7 +1,5 @@
 """嵌入模型管理"""
 
-from typing import Optional
-
 
 class EmbeddingManager:
     """嵌入模型管理器"""
@@ -27,10 +25,11 @@ class EmbeddingManager:
     def _hash_embed(self, text: str, dims: int = 256) -> list[float]:
         """简易哈希嵌入 (开发用，生产应使用 OpenAI/text-embedding-3-small)"""
         import hashlib
+
         # 滑动窗口哈希
         vec = [0.0] * dims
         words = text.lower().split()
-        for i, word in enumerate(words):
+        for _i, word in enumerate(words):
             h = hashlib.md5(word.encode()).digest()
             for j in range(min(len(h), dims)):
                 vec[j] += (h[j] / 255.0 - 0.5) * 0.1

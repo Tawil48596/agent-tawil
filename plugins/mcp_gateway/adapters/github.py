@@ -1,10 +1,8 @@
 """GitHub MCP 适配器 — 将 GitHub REST API 映射为 MCP 工具"""
 
 import asyncio
-import json
 import os
 import time
-from typing import Any, Optional
 
 import httpx
 import structlog
@@ -66,10 +64,8 @@ class GitHubMCPAdapter:
         cfg = config or {}
         self._rate_limiter = GitHubRateLimiter()
         self._circuit = CircuitBreaker(name="github_mcp", failure_threshold=5)
-        self._client: Optional[httpx.AsyncClient] = None
-        self._workspace = os.path.expanduser(
-            cfg.get("workspace", "~/agent_workspace")
-        )
+        self._client: httpx.AsyncClient | None = None
+        self._workspace = os.path.expanduser(cfg.get("workspace", "~/agent_workspace"))
         os.makedirs(self._workspace, exist_ok=True)
 
     @property
@@ -191,9 +187,12 @@ class GitHubMCPAdapter:
                 "description": "Create a GitHub branch from an existing ref",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {"owner": {"type": "string"}, "repo": {"type": "string"},
-                                   "branch": {"type": "string"},
-                                   "from_ref": {"type": "string", "default": "main"}},
+                    "properties": {
+                        "owner": {"type": "string"},
+                        "repo": {"type": "string"},
+                        "branch": {"type": "string"},
+                        "from_ref": {"type": "string", "default": "main"},
+                    },
                     "required": ["owner", "repo", "branch"],
                 },
             },
@@ -202,10 +201,15 @@ class GitHubMCPAdapter:
                 "description": "Create or update a UTF-8 file and commit it",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {"owner": {"type": "string"}, "repo": {"type": "string"},
-                                   "path": {"type": "string"}, "content": {"type": "string"},
-                                   "message": {"type": "string"}, "branch": {"type": "string"},
-                                   "sha": {"type": "string"}},
+                    "properties": {
+                        "owner": {"type": "string"},
+                        "repo": {"type": "string"},
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                        "message": {"type": "string"},
+                        "branch": {"type": "string"},
+                        "sha": {"type": "string"},
+                    },
                     "required": ["owner", "repo", "path", "content", "message", "branch"],
                 },
             },
@@ -214,10 +218,15 @@ class GitHubMCPAdapter:
                 "description": "Open a pull request for a prepared branch",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {"owner": {"type": "string"}, "repo": {"type": "string"},
-                                   "title": {"type": "string"}, "head": {"type": "string"},
-                                   "base": {"type": "string", "default": "main"},
-                                   "body": {"type": "string"}, "draft": {"type": "boolean"}},
+                    "properties": {
+                        "owner": {"type": "string"},
+                        "repo": {"type": "string"},
+                        "title": {"type": "string"},
+                        "head": {"type": "string"},
+                        "base": {"type": "string", "default": "main"},
+                        "body": {"type": "string"},
+                        "draft": {"type": "boolean"},
+                    },
                     "required": ["owner", "repo", "title", "head"],
                 },
             },
@@ -294,8 +303,9 @@ class GitHubMCPAdapter:
 
     # ── 工具实现 ──
 
-    async def _tool_github_search_repos(self, query: str, language: str = "",
-                                         sort: str = "stars", limit: int = 10) -> dict:
+    async def _tool_github_search_repos(
+        self, query: str, language: str = "", sort: str = "stars", limit: int = 10
+    ) -> dict:
         q = query
         if language:
             q += f" language:{language}"
@@ -336,7 +346,9 @@ class GitHubMCPAdapter:
         }
 
     async def _tool_github_list_files(self, owner: str, repo: str, path: str = "") -> dict:
-        api_path = f"/repos/{owner}/{repo}/contents/{path}" if path else f"/repos/{owner}/{repo}/contents"
+        api_path = (
+            f"/repos/{owner}/{repo}/contents/{path}" if path else f"/repos/{owner}/{repo}/contents"
+        )
         data = await self._gh_get(api_path)
         if "error" in data:
             return data
@@ -344,20 +356,24 @@ class GitHubMCPAdapter:
             return {
                 "path": path or "/",
                 "items": [
-                    {"name": d["name"], "type": d["type"], "path": d["path"],
-                     "size": d.get("size", 0)}
+                    {
+                        "name": d["name"],
+                        "type": d["type"],
+                        "path": d["path"],
+                        "size": d.get("size", 0),
+                    }
                     for d in data
                 ],
             }
         return {"content": data}
 
-    async def _tool_github_read_file(self, owner: str, repo: str, path: str,
-                                      ref: str = "") -> dict:
+    async def _tool_github_read_file(self, owner: str, repo: str, path: str, ref: str = "") -> dict:
         params = {"ref": ref} if ref else {}
         data = await self._gh_get(f"/repos/{owner}/{repo}/contents/{path}", params)
         if "error" in data:
             return data
         import base64
+
         content = data.get("content", "")
         if content:
             try:
@@ -367,23 +383,31 @@ class GitHubMCPAdapter:
                 return {"path": path, "content": "[Binary file]", "size": data.get("size", 0)}
         return {"path": path, "content": ""}
 
-    async def _tool_github_list_issues(self, owner: str, repo: str,
-                                        state: str = "open", limit: int = 10) -> dict:
-        data = await self._gh_get(f"/repos/{owner}/{repo}/issues",
-                                   {"state": state, "per_page": limit})
+    async def _tool_github_list_issues(
+        self, owner: str, repo: str, state: str = "open", limit: int = 10
+    ) -> dict:
+        data = await self._gh_get(
+            f"/repos/{owner}/{repo}/issues", {"state": state, "per_page": limit}
+        )
         if "error" in data:
             return data
         return {
             "issues": [
-                {"number": i["number"], "title": i["title"],
-                 "state": i["state"], "created_at": i["created_at"],
-                 "url": i["html_url"], "labels": [l["name"] for l in i.get("labels", [])]}
+                {
+                    "number": i["number"],
+                    "title": i["title"],
+                    "state": i["state"],
+                    "created_at": i["created_at"],
+                    "url": i["html_url"],
+                    "labels": [label["name"] for label in i.get("labels", [])],
+                }
                 for i in (data if isinstance(data, list) else [])[:limit]
             ],
         }
 
-    async def _tool_github_search_code(self, query: str, language: str = "",
-                                        limit: int = 10) -> dict:
+    async def _tool_github_search_code(
+        self, query: str, language: str = "", limit: int = 10
+    ) -> dict:
         q = query
         if language:
             q += f" language:{language}"
@@ -408,27 +432,44 @@ class GitHubMCPAdapter:
             return data
         return {
             "releases": [
-                {"tag": r["tag_name"], "name": r.get("name", ""),
-                 "published_at": r.get("published_at"), "url": r["html_url"]}
+                {
+                    "tag": r["tag_name"],
+                    "name": r.get("name", ""),
+                    "published_at": r.get("published_at"),
+                    "url": r["html_url"],
+                }
                 for r in (data if isinstance(data, list) else [])[:limit]
             ],
         }
 
-    async def _tool_github_clone_repo(self, owner: str, repo: str,
-                                       branch: str = "main") -> dict:
+    async def _tool_github_clone_repo(self, owner: str, repo: str, branch: str = "main") -> dict:
         url = f"https://github.com/{owner}/{repo}.git"
         target = os.path.join(self._workspace, f"{owner}_{repo}")
 
         if os.path.exists(target):
             # 已存在 — 更新
             proc = await asyncio.create_subprocess_exec(
-                "git", "-C", target, "pull", "origin", branch,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                "git",
+                "-C",
+                target,
+                "pull",
+                "origin",
+                branch,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
         else:
             proc = await asyncio.create_subprocess_exec(
-                "git", "clone", "--depth", "1", "--branch", branch, url, target,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "--branch",
+                branch,
+                url,
+                target,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
 
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
@@ -438,42 +479,83 @@ class GitHubMCPAdapter:
             "output": stdout.decode()[:500] if proc.returncode == 0 else stderr.decode()[:500],
         }
 
-    async def _tool_github_create_branch(self, owner: str, repo: str, branch: str,
-                                          from_ref: str = "main") -> dict:
+    async def _tool_github_create_branch(
+        self, owner: str, repo: str, branch: str, from_ref: str = "main"
+    ) -> dict:
         ref = await self._gh_get(f"/repos/{owner}/{repo}/git/ref/heads/{from_ref}")
         if "error" in ref:
             return ref
-        result = await self._gh_write("POST", f"/repos/{owner}/{repo}/git/refs", {
-            "ref": f"refs/heads/{branch}", "sha": ref["object"]["sha"],
-        })
+        result = await self._gh_write(
+            "POST",
+            f"/repos/{owner}/{repo}/git/refs",
+            {
+                "ref": f"refs/heads/{branch}",
+                "sha": ref["object"]["sha"],
+            },
+        )
         if "error" in result:
             return result
-        return {"branch": branch, "sha": result.get("object", {}).get("sha"),
-                "url": result.get("url")}
+        return {
+            "branch": branch,
+            "sha": result.get("object", {}).get("sha"),
+            "url": result.get("url"),
+        }
 
-    async def _tool_github_update_file(self, owner: str, repo: str, path: str,
-                                        content: str, message: str, branch: str,
-                                        sha: str = "") -> dict:
+    async def _tool_github_update_file(
+        self,
+        owner: str,
+        repo: str,
+        path: str,
+        content: str,
+        message: str,
+        branch: str,
+        sha: str = "",
+    ) -> dict:
         import base64
-        payload = {"message": message,
-                   "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
-                   "branch": branch}
+
+        payload = {
+            "message": message,
+            "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+            "branch": branch,
+        }
         if sha:
             payload["sha"] = sha
         result = await self._gh_write("PUT", f"/repos/{owner}/{repo}/contents/{path}", payload)
         if "error" in result:
             return result
-        return {"path": path, "branch": branch,
-                "commit_sha": result.get("commit", {}).get("sha"),
-                "url": result.get("content", {}).get("html_url")}
+        return {
+            "path": path,
+            "branch": branch,
+            "commit_sha": result.get("commit", {}).get("sha"),
+            "url": result.get("content", {}).get("html_url"),
+        }
 
-    async def _tool_github_create_pull_request(self, owner: str, repo: str, title: str,
-                                                head: str, base: str = "main",
-                                                body: str = "", draft: bool = False) -> dict:
-        result = await self._gh_write("POST", f"/repos/{owner}/{repo}/pulls", {
-            "title": title, "head": head, "base": base, "body": body, "draft": draft,
-        })
+    async def _tool_github_create_pull_request(
+        self,
+        owner: str,
+        repo: str,
+        title: str,
+        head: str,
+        base: str = "main",
+        body: str = "",
+        draft: bool = False,
+    ) -> dict:
+        result = await self._gh_write(
+            "POST",
+            f"/repos/{owner}/{repo}/pulls",
+            {
+                "title": title,
+                "head": head,
+                "base": base,
+                "body": body,
+                "draft": draft,
+            },
+        )
         if "error" in result:
             return result
-        return {"number": result.get("number"), "url": result.get("html_url"),
-                "state": result.get("state"), "draft": result.get("draft", draft)}
+        return {
+            "number": result.get("number"),
+            "url": result.get("html_url"),
+            "state": result.get("state"),
+            "draft": result.get("draft", draft),
+        }

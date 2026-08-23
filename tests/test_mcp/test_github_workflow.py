@@ -24,13 +24,24 @@ async def test_github_branch_file_and_pr_workflow(monkeypatch, tmp_path):
     monkeypatch.setattr(adapter, "_gh_get", fake_get)
     monkeypatch.setattr(adapter, "_gh_write", fake_write)
 
-    branch = await adapter.call_tool("github_create_branch", {
-        "owner": "o", "repo": "r", "branch": "feature"})
-    updated = await adapter.call_tool("github_update_file", {
-        "owner": "o", "repo": "r", "path": "README.md", "content": "hello",
-        "message": "Update", "branch": "feature"})
-    pull = await adapter.call_tool("github_create_pull_request", {
-        "owner": "o", "repo": "r", "title": "Feature", "head": "feature", "draft": True})
+    branch = await adapter.call_tool(
+        "github_create_branch", {"owner": "o", "repo": "r", "branch": "feature"}
+    )
+    updated = await adapter.call_tool(
+        "github_update_file",
+        {
+            "owner": "o",
+            "repo": "r",
+            "path": "README.md",
+            "content": "hello",
+            "message": "Update",
+            "branch": "feature",
+        },
+    )
+    pull = await adapter.call_tool(
+        "github_create_pull_request",
+        {"owner": "o", "repo": "r", "title": "Feature", "head": "feature", "draft": True},
+    )
 
     assert branch["sha"] == "base-sha"
     assert updated["commit_sha"] == "commit-sha"

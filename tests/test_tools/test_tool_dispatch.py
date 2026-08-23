@@ -114,9 +114,7 @@ async def test_external_approval_allows_dangerous_tool():
 
 @pytest.mark.asyncio
 async def test_external_denial_blocks_dangerous_tool():
-    dispatcher = ToolDispatcher(
-        approval_handler=lambda _name, _arguments, _context: False
-    )
+    dispatcher = ToolDispatcher(approval_handler=lambda _name, _arguments, _context: False)
     dispatcher.register("dangerous", lambda: "must not run", requires_approval=True)
 
     result = await dispatcher.execute_parallel([_call("dangerous", "{}")])
@@ -129,9 +127,7 @@ async def test_model_arguments_cannot_self_approve_tool_call():
     dispatcher = ToolDispatcher()
     dispatcher.register("dangerous", lambda approved=False: approved, requires_approval=True)
 
-    result = await dispatcher.execute_parallel([
-        _call("dangerous", json.dumps({"approved": True}))
-    ])
+    result = await dispatcher.execute_parallel([_call("dangerous", json.dumps({"approved": True}))])
 
     assert result[0]["code"] == "approval_required"
 
@@ -249,9 +245,7 @@ async def test_uncertain_resolution_requires_explicit_confirmation(tmp_path):
     ledger = ToolExecutionLedger(tmp_path, lease_seconds=0)
     ledger.acquire("session-1", "call-1", "write", {})
     ledger.acquire("session-1", "call-1", "write", {})
-    request = SimpleNamespace(
-        app=SimpleNamespace(state=SimpleNamespace(execution_ledger=ledger))
-    )
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(execution_ledger=ledger)))
 
     with pytest.raises(HTTPException) as denied:
         await resolve_uncertain_execution(
@@ -260,9 +254,7 @@ async def test_uncertain_resolution_requires_explicit_confirmation(tmp_path):
 
     assert denied.value.status_code == 400
     resolved = await resolve_uncertain_execution(
-        ExecutionResolveRequest(
-            session_id="session-1", call_id="call-1", confirm_reconciled=True
-        ),
+        ExecutionResolveRequest(session_id="session-1", call_id="call-1", confirm_reconciled=True),
         request,
     )
     assert resolved["ok"] is True

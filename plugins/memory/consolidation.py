@@ -1,7 +1,5 @@
 """记忆巩固 — 会话结束后提取关键信息写入长期记忆"""
 
-from typing import Any, Optional
-
 import structlog
 
 from plugins.memory.long_term import LongTermMemory, MemoryEntry
@@ -28,11 +26,14 @@ class MemoryConsolidator:
         self._ltm = long_term
         self._router = model_router
 
-    async def consolidate(self, messages: list[dict],
-                           session_id: str = "",
-                           model_override: str = None,
-                           user_id: str = "local",
-                           project_id: str = "default") -> list[str]:
+    async def consolidate(
+        self,
+        messages: list[dict],
+        session_id: str = "",
+        model_override: str = None,
+        user_id: str = "local",
+        project_id: str = "default",
+    ) -> list[str]:
         """从对话中提取关键信息并写入长期记忆"""
         if not messages or len(messages) < 3:
             return []
@@ -64,8 +65,9 @@ class MemoryConsolidator:
             if eid:
                 ids.append(eid)
 
-        logger.info("Memory consolidated", session_id=session_id,
-                     extracted=len(extracted), saved=len(ids))
+        logger.info(
+            "Memory consolidated", session_id=session_id, extracted=len(extracted), saved=len(ids)
+        )
         return ids
 
     def _format_conversation(self, messages: list[dict]) -> str:
@@ -77,8 +79,7 @@ class MemoryConsolidator:
                 lines.append(f"{role}: {content[:500]}")
         return "\n".join(lines)
 
-    async def _extract_with_llm(self, conversation: str,
-                                 model_override: str = None) -> list[dict]:
+    async def _extract_with_llm(self, conversation: str, model_override: str = None) -> list[dict]:
         """用 LLM 提取关键信息"""
         if not self._router:
             # 无 LLM — 使用简单启发式
@@ -86,25 +87,31 @@ class MemoryConsolidator:
 
         try:
             from litellm import acompletion
+
             from plugins.agent_engine.model_router import RouteRequest, TaskType
 
-            route = self._router.route(RouteRequest(
-                task_type=TaskType.SUMMARIZATION,
-                override_model=model_override,
-            ))
+            route = self._router.route(
+                RouteRequest(
+                    task_type=TaskType.SUMMARIZATION,
+                    override_model=model_override,
+                )
+            )
 
             response = await acompletion(
                 model=f"{route.provider}/{route.model}",
-                messages=[{
-                    "role": "user",
-                    "content": self.CONSOLIDATION_PROMPT.format(conversation=conversation),
-                }],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": self.CONSOLIDATION_PROMPT.format(conversation=conversation),
+                    }
+                ],
                 api_key=route.api_key,
                 api_base=route.base_url if route.base_url else None,
                 max_tokens=500,
             )
 
             import json
+
             text = response.choices[0].message.content or "[]"
             # 清洗可能的前缀
             if text.startswith("```"):
@@ -127,11 +134,13 @@ class MemoryConsolidator:
             if line.startswith("user:") or line.startswith("user："):
                 for kw in preference_keywords:
                     if kw in line:
-                        facts.append({
-                            "content": line.split(":", 1)[-1].strip()[:200],
-                            "type": "preference",
-                            "importance": 0.6,
-                        })
+                        facts.append(
+                            {
+                                "content": line.split(":", 1)[-1].strip()[:200],
+                                "type": "preference",
+                                "importance": 0.6,
+                            }
+                        )
                         break
 
         return facts[:5]

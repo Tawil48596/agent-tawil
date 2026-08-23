@@ -2,7 +2,6 @@
 
 import json
 import sqlite3
-from typing import Optional
 
 
 class ConversationExporter:
@@ -20,14 +19,19 @@ class ConversationExporter:
 
         lines = []
         for msg in messages:
-            lines.append(json.dumps({
-                "id": msg["id"],
-                "role": msg["role"],
-                "content": msg["content"],
-                "tool_calls": json.loads(msg["tool_calls"] or "[]"),
-                "token_count": msg["token_count"],
-                "created_at": msg["created_at"],
-            }, ensure_ascii=False))
+            lines.append(
+                json.dumps(
+                    {
+                        "id": msg["id"],
+                        "role": msg["role"],
+                        "content": msg["content"],
+                        "tool_calls": json.loads(msg["tool_calls"] or "[]"),
+                        "token_count": msg["token_count"],
+                        "created_at": msg["created_at"],
+                    },
+                    ensure_ascii=False,
+                )
+            )
 
         return "\n".join(lines)
 
@@ -42,11 +46,23 @@ class ConversationExporter:
         ).fetchall()
 
         title = session["title"] if session else "对话"
-        lines = [f"# {title}", "", f"会话 ID: {session_id}", f"创建时间: {session['created_at']}", "",
-                  "---", ""]
+        lines = [
+            f"# {title}",
+            "",
+            f"会话 ID: {session_id}",
+            f"创建时间: {session['created_at']}",
+            "",
+            "---",
+            "",
+        ]
 
         for msg in messages:
-            role_label = {"user": "👤 用户", "assistant": "🤖 Agent", "system": "📋 系统", "tool": "🔧 工具"}
+            role_label = {
+                "user": "👤 用户",
+                "assistant": "🤖 Agent",
+                "system": "📋 系统",
+                "tool": "🔧 工具",
+            }
             label = role_label.get(msg["role"], msg["role"])
             lines.append(f"### {label}")
             if msg["content"]:
@@ -54,7 +70,9 @@ class ConversationExporter:
             tool_calls = json.loads(msg["tool_calls"] or "[]")
             if tool_calls:
                 for tc in tool_calls:
-                    lines.append(f"- 🔧 `{tc.get('name', tc.get('function', {}).get('name', '?'))}`")
+                    lines.append(
+                        f"- 🔧 `{tc.get('name', tc.get('function', {}).get('name', '?'))}`"
+                    )
             lines.append("")
 
         return "\n".join(lines)

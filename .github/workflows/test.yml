@@ -24,7 +24,7 @@ jobs:
         python-version: ["3.11", "3.12"]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -35,34 +35,57 @@ jobs:
           uv venv --python ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv pip install -e ".[dev]"
+        run: uv sync --frozen --extra dev
 
-      - name: Lint correctness rules
-        run: uv run ruff check . --select E9,F63,F7,F82
+      - name: Lint Python
+        run: uv run ruff check .
 
-      - name: Type check known modules
+      - name: Type check stable modules
+        run: >-
+          uv run mypy
+          core/
+          shared/
+          --ignore-missing-imports
+
+      - name: Audit remaining plugin type debt
         continue-on-error: true
-        run: uv run mypy core/ shared/ services/ --ignore-missing-imports
+        run: uv run mypy plugins/ --ignore-missing-imports
 
       - name: Test with coverage gate
-        run: uv run pytest --cov-report=xml --cov-fail-under=35
+        run: uv run pytest --cov-report=xml --cov-report=json:coverage.json --cov-fail-under=35
+
+      - name: Enforce critical module coverage
+        run: >-
+          uv run python -m scripts.check_coverage_thresholds coverage.json
+          --minimum plugins/agent_engine/engine.py=85
+          --minimum plugins/agent_engine/tool_dispatch.py=80
+          --minimum plugins/checkpoint/execution_ledger.py=70
+          --minimum plugins/conversation/session_store.py=80
 
       - name: Upload coverage report
         if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: python-coverage
           path: coverage.xml
 
       - name: Publish coverage
         if: matrix.python-version == '3.12'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
 
+      - name: Verify wheel entry points
+        if: matrix.python-version == '3.12'
+        run: |
+          uv build --wheel
+          uv venv .release-venv --python 3.12
+          uv pip install --python .release-venv/bin/python dist/*.whl
+          .release-venv/bin/python -c "import app, cli; assert callable(app.main); assert callable(cli.main)"
+
   frontend:
-    name: Frontend build
+    name: Frontend quality
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -70,10 +93,10 @@ jobs:
         working-directory: web
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 20
           cache: npm
@@ -81,6 +104,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Lint UI
+        run: npm run lint
+
+      - name: Test UI interactions and accessibility
+        run: npm test
 
       - name: Build production UI
         run: npm run build
@@ -91,7 +120,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -100,7 +129,7 @@ jobs:
         run: |
           uv python install 3.12
           uv venv --python 3.12
-          uv pip install -e ".[dev]"
+          uv sync --frozen --extra dev
 
       - name: Install Chromium
         run: uv run playwright install --with-deps chromium
@@ -114,7 +143,7 @@ jobs:
 
       - name: Upload server log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: browser-smoke-server-log
           path: server.log
@@ -126,8 +155,8 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
         with:
           fail-on-severity: high
 
@@ -144,13 +173,13 @@ jobs:
         language: [python, javascript-typescript]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
         with:
           languages: ${{ matrix.language }}
           build-mode: none
 
       - name: Analyze
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4

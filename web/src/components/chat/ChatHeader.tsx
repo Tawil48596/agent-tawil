@@ -44,13 +44,14 @@ export function ChatHeader() {
   };
 
   return (
-    <header className="relative h-16 border-b border-white/10 flex items-center px-6 gap-3 shrink-0 bg-[#121a2d]/70 backdrop-blur-xl">
-      <div className="mr-2 hidden lg:block">
+    <header className="relative min-h-16 border-b border-white/10 flex flex-wrap items-center gap-2 px-3 py-3 pl-16 shrink-0 bg-[#121a2d]/75 backdrop-blur-xl sm:px-4 sm:pl-16 lg:px-6 2xl:flex-nowrap">
+      <div className="mr-2 hidden 2xl:block">
         <div className="text-sm font-semibold">工作台</div>
         <div className="text-[11px] text-[#8f9dbc] mt-0.5 flex items-center gap-1"><Circle size={7} className="fill-[#63d6a3] text-[#63d6a3]" /> 系统已就绪</div>
       </div>
       <select value={model} onChange={(e) => setModel(e.target.value)}
-        className="bg-[#18233b] text-sm border border-white/10 rounded-lg px-3 py-2 text-[#e1e4ea] focus:outline-none focus:ring-2 focus:ring-[#7899ff]/40">
+        aria-label="选择模型"
+        className="min-w-36 flex-1 bg-[#18233b] text-xs border border-white/10 rounded-lg px-3 py-2.5 text-[#e1e4ea] focus:outline-none focus:ring-2 focus:ring-[#7899ff]/40 sm:flex-none sm:text-sm">
         <option value="">自动路由</option>
         {models.map((m) => (
           <option key={m.name} value={m.name}>
@@ -60,7 +61,8 @@ export function ChatHeader() {
       </select>
       <select value={reasoningEffort} onChange={(e) => setReasoningEffort(e.target.value)}
         title="控制支持该参数的模型所使用的思考强度"
-        className="bg-[#18233b] text-sm border border-white/10 rounded-lg px-3 py-2 text-[#e1e4ea] focus:outline-none focus:ring-2 focus:ring-[#7899ff]/40">
+        aria-label="选择思考强度"
+        className="bg-[#18233b] text-xs border border-white/10 rounded-lg px-3 py-2.5 text-[#e1e4ea] focus:outline-none focus:ring-2 focus:ring-[#7899ff]/40 sm:text-sm">
         <option value="auto">思考：自动</option>
         <option value="low">思考：低</option>
         <option value="medium">思考：中</option>
@@ -99,8 +101,8 @@ export function ChatHeader() {
           </fieldset>
         </details>
       )}
-      <select value={task} onChange={(e) => setTask(e.target.value)}
-        className="bg-[#18233b] text-sm border border-white/10 rounded-lg px-3 py-2 text-[#e1e4ea] focus:outline-none focus:ring-2 focus:ring-[#7899ff]/40">
+      <select value={task} onChange={(e) => setTask(e.target.value)} aria-label="选择任务类型"
+        className="hidden bg-[#18233b] text-sm border border-white/10 rounded-lg px-3 py-2 text-[#e1e4ea] focus:outline-none focus:ring-2 focus:ring-[#7899ff]/40 xl:block">
         <option value="reasoning">推理</option>
         <option value="coding">编码</option>
         <option value="summarization">摘要</option>
@@ -108,7 +110,7 @@ export function ChatHeader() {
       <button onClick={forkSession} disabled={!activeId || messages.length === 0 || forking}
         title={!activeId || messages.length === 0 ? "发送消息后才能创建分支" : "从最新消息创建分支"}
         className="text-xs text-[#9ca9c9] hover:text-white flex items-center gap-1 px-3 py-2 rounded-lg border border-white/10 hover:bg-white/5 transition disabled:opacity-40 disabled:cursor-not-allowed">
-        <GitBranch size={14} /> {forking ? "创建中…" : "分支"}
+        <GitBranch size={14} /> <span className="hidden sm:inline">{forking ? "创建中…" : "分支"}</span>
       </button>
       <div
         className="ml-auto hidden xl:flex items-center gap-2 rounded-lg border border-white/10 bg-[#10182a] px-3 py-1.5 text-[11px] text-[#9cacca]"
@@ -127,7 +129,7 @@ export function ChatHeader() {
         <span>缓存 <b className="text-[#8ff0c4]">{formatTokens(lastUsage?.cached_input_tokens)}</b></span>
         <span>会话 <b className="text-[#aebfff]">{formatTokens(sessionUsage?.total_tokens)}</b></span>
       </div>
-      <span className="text-xs text-[#8f9dbc]">
+      <span className="ml-auto text-xs text-[#8f9dbc]">
         {error ? <span className="text-[#f87171] mr-3">调用失败</span> : null}
         会话: {activeId?.slice(0, 8)}
       </span>

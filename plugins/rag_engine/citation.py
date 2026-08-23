@@ -1,7 +1,5 @@
 """引用追踪 — 检索结果附带 source_id，回复中标注来源"""
 
-from typing import Optional
-
 
 class CitationTracker:
     """RAG 引用追踪器"""
@@ -12,12 +10,14 @@ class CitationTracker:
     def add(self, source_id: str, chunk_id: str, content: str) -> str:
         """添加引用，返回引用标记 [1], [2], ..."""
         idx = len(self._citations) + 1
-        self._citations.append({
-            "index": idx,
-            "source_id": source_id,
-            "chunk_id": chunk_id,
-            "content_preview": content[:200],
-        })
+        self._citations.append(
+            {
+                "index": idx,
+                "source_id": source_id,
+                "chunk_id": chunk_id,
+                "content_preview": content[:200],
+            }
+        )
         return f"[{idx}]"
 
     def annotate_response(self, response: str) -> str:

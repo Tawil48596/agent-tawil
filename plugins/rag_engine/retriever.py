@@ -2,12 +2,10 @@
 
 import math
 from collections import Counter
-from typing import Optional
 
 
 class RetrievalResult:
-    def __init__(self, content: str, score: float, chunk_id: str = "",
-                 metadata: dict = None):
+    def __init__(self, content: str, score: float, chunk_id: str = "", metadata: dict = None):
         self.content = content
         self.score = score
         self.chunk_id = chunk_id
@@ -21,21 +19,24 @@ class HybridRetriever:
         self._vs = vector_store
         self._alpha = alpha  # Dense 权重 (1-alpha = BM25 权重)
         self._bm25_index: dict[str, list[str]] = {}  # collection → doc texts
-        self._bm25_cache: dict[str, "BM25Scorer"] = {}
+        self._bm25_cache: dict[str, BM25Scorer] = {}
 
-    async def search(self, query: str, kb_ids: list[str] = None,
-                      top_k: int = 10) -> list[RetrievalResult]:
+    async def search(
+        self, query: str, kb_ids: list[str] = None, top_k: int = 10
+    ) -> list[RetrievalResult]:
         results = []
 
         # 1. Dense 检索 (向量)
         dense_results = await self._vs.search(query, kb_ids, top_k * 2)
         for r in dense_results:
-            results.append(RetrievalResult(
-                content=r.get("content", ""),
-                score=r.get("score", 0.0) * self._alpha,
-                chunk_id=r.get("id", ""),
-                metadata=r.get("metadata", {}),
-            ))
+            results.append(
+                RetrievalResult(
+                    content=r.get("content", ""),
+                    score=r.get("score", 0.0) * self._alpha,
+                    chunk_id=r.get("id", ""),
+                    metadata=r.get("metadata", {}),
+                )
+            )
 
         # 2. Sparse 检索 (BM25) — 如果有本地索引
         if kb_ids:
@@ -43,11 +44,13 @@ class HybridRetriever:
                 if kb_id in self._bm25_cache:
                     bm25_results = self._bm25_cache[kb_id].search(query, top_k)
                     for content, score in bm25_results:
-                        results.append(RetrievalResult(
-                            content=content,
-                            score=score * (1 - self._alpha),
-                            metadata={"kb_id": kb_id, "method": "bm25"},
-                        ))
+                        results.append(
+                            RetrievalResult(
+                                content=content,
+                                score=score * (1 - self._alpha),
+                                metadata={"kb_id": kb_id, "method": "bm25"},
+                            )
+                        )
 
         # 3. RRF 融合
         return self.fuse(results, top_k)

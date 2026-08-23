@@ -14,8 +14,9 @@ class CostCalculator:
 
     def calculate(self, model: str, prompt_tokens: int, completion_tokens: int) -> float:
         pricing = self.PRICING.get(model, {"input": 1.0, "output": 5.0})
-        cost = (prompt_tokens / 1_000_000) * pricing["input"] + \
-               (completion_tokens / 1_000_000) * pricing["output"]
+        cost = (prompt_tokens / 1_000_000) * pricing["input"] + (
+            completion_tokens / 1_000_000
+        ) * pricing["output"]
         return round(cost, 6)
 
     def estimate_budget(self, records: list) -> dict:

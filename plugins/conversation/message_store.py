@@ -3,7 +3,6 @@
 import json
 import sqlite3
 from datetime import datetime
-from typing import Optional
 
 
 class MessageStore:
@@ -12,14 +11,27 @@ class MessageStore:
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
 
-    def add_message(self, session_id: str, role: str, content: str,
-                     tool_calls: list = None, token_count: int = 0,
-                     parent_msg_id: int = None) -> int:
+    def add_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        tool_calls: list = None,
+        token_count: int = 0,
+        parent_msg_id: int = None,
+    ) -> int:
         cur = self._conn.execute(
-            """INSERT INTO messages (session_id, parent_msg_id, role, content, tool_calls, token_count)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (session_id, parent_msg_id, role, content,
-             json.dumps(tool_calls or [], ensure_ascii=False), token_count),
+            "INSERT INTO messages "
+            "(session_id, parent_msg_id, role, content, tool_calls, token_count) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                session_id,
+                parent_msg_id,
+                role,
+                content,
+                json.dumps(tool_calls or [], ensure_ascii=False),
+                token_count,
+            ),
         )
         self._conn.execute(
             "UPDATE sessions SET updated_at = ? WHERE id = ?",
@@ -28,8 +40,9 @@ class MessageStore:
         self._conn.commit()
         return cur.lastrowid
 
-    def get_messages(self, session_id: str, limit: int = 100, offset: int = 0,
-                      before_id: int = None) -> list[dict]:
+    def get_messages(
+        self, session_id: str, limit: int = 100, offset: int = 0, before_id: int = None
+    ) -> list[dict]:
         query = "SELECT * FROM messages WHERE session_id = ?"
         params = [session_id]
         if before_id:
@@ -39,7 +52,7 @@ class MessageStore:
         params.extend([limit, offset])
         return [dict(r) for r in self._conn.execute(query, params).fetchall()]
 
-    def get_message(self, msg_id: int) -> Optional[dict]:
+    def get_message(self, msg_id: int) -> dict | None:
         row = self._conn.execute("SELECT * FROM messages WHERE id = ?", (msg_id,)).fetchone()
         return dict(row) if row else None
 
@@ -49,6 +62,7 @@ class MessageStore:
         return cur.rowcount > 0
 
     def count(self, session_id: str) -> int:
-        row = self._conn.execute("SELECT COUNT(*) FROM messages WHERE session_id = ?",
-                                  (session_id,)).fetchone()
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE session_id = ?", (session_id,)
+        ).fetchone()
         return row[0] if row else 0

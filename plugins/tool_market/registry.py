@@ -1,8 +1,7 @@
 """工具注册中心 — 完整的 Tool Schema + Handler 注册 + 热加载"""
 
-import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
 
 import structlog
 
@@ -12,12 +11,13 @@ logger = structlog.get_logger()
 @dataclass
 class ToolDef:
     """工具定义 — 完整的注册 Schema"""
+
     name: str
     description: str
     toolset: str = "custom"
     parameters: dict = field(default_factory=dict)
-    handler: Optional[Callable] = None
-    check_fn: Optional[Callable] = None
+    handler: Callable | None = None
+    check_fn: Callable | None = None
     requires_env: list[str] = field(default_factory=list)
     requires_packages: list[str] = field(default_factory=list)
     requires_system: list[str] = field(default_factory=list)
@@ -30,8 +30,8 @@ class ToolDef:
     enabled: bool = True
     call_count: int = 0
     # Generative UI
-    genui_component: str = ""       # 推荐的 UI 组件 (RepoCardGrid, CodeViewer...)
-    genui_priority: int = 0         # 优先级
+    genui_component: str = ""  # 推荐的 UI 组件 (RepoCardGrid, CodeViewer...)
+    genui_priority: int = 0  # 优先级
 
     def to_dict(self) -> dict:
         return {
@@ -84,12 +84,16 @@ class ToolRegistry:
 
         logger.info("Tool registered", name=tool.name, toolset=tool.toolset)
 
-    def register_function(self, name: str, description: str, parameters: dict,
-                           handler: Callable, **kwargs):
+    def register_function(
+        self, name: str, description: str, parameters: dict, handler: Callable, **kwargs
+    ):
         """函数式注册 — 零代码侵入"""
         tool = ToolDef(
-            name=name, description=description, parameters=parameters,
-            handler=handler, **kwargs,
+            name=name,
+            description=description,
+            parameters=parameters,
+            handler=handler,
+            **kwargs,
         )
         self.register(tool)
         return tool
@@ -101,7 +105,7 @@ class ToolRegistry:
             for tag in tool.tags:
                 self._tags_index.get(tag, []).remove(name)
 
-    def get(self, name: str) -> Optional[ToolDef]:
+    def get(self, name: str) -> ToolDef | None:
         return self._tools.get(name)
 
     def list_all(self) -> list[ToolDef]:
@@ -115,14 +119,14 @@ class ToolRegistry:
 
     # ── 搜索 ──
 
-    def search(self, query: str = "", toolset: str = "", tag: str = "",
-                installed_only: bool = True) -> list[ToolDef]:
+    def search(
+        self, query: str = "", toolset: str = "", tag: str = "", installed_only: bool = True
+    ) -> list[ToolDef]:
         results = self.list_installed() if installed_only else self.list_all()
 
         if query:
             q = query.lower()
-            results = [t for t in results
-                        if q in t.name.lower() or q in t.description.lower()]
+            results = [t for t in results if q in t.name.lower() or q in t.description.lower()]
         if toolset:
             results = [t for t in results if t.toolset == toolset]
         if tag:
@@ -149,6 +153,7 @@ class ToolRegistry:
 
         for env_var in tool.requires_env:
             import os
+
             if env_var not in os.environ:
                 missing["env"].append(env_var)
 
@@ -160,6 +165,7 @@ class ToolRegistry:
 
         for cmd in tool.requires_system:
             import shutil
+
             if not shutil.which(cmd):
                 missing["system"].append(cmd)
 

@@ -35,9 +35,7 @@ async def test_rag_metadata_vectors_and_citations_survive_restart(tmp_path):
     restarted = RAGEngine(config)
     knowledge_bases = await restarted.list_kbs()
     documents = await restarted.list_documents(kb_id)
-    result = await restarted.query(
-        "aurora", [kb_id], top_k=5, apply_guardrail=False
-    )
+    result = await restarted.query("aurora", [kb_id], top_k=5, apply_guardrail=False)
 
     assert document["chunk_count"] == 1
     assert knowledge_bases[0]["document_count"] == 1
@@ -63,9 +61,7 @@ async def test_deleting_document_removes_metadata_and_retrieval_chunks(tmp_path)
     assert await engine.list_documents(kb_id) == []
 
     restarted = RAGEngine(config)
-    result = await restarted.query(
-        "unique-removal-token", [kb_id], top_k=5, apply_guardrail=False
-    )
+    result = await restarted.query("unique-removal-token", [kb_id], top_k=5, apply_guardrail=False)
     assert result["results"] == []
 
 

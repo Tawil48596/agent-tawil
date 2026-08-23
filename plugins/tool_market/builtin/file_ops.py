@@ -3,8 +3,6 @@
 import json
 import os
 from pathlib import Path
-from typing import Optional
-
 
 SENSITIVE_NAMES = {
     ".env",
@@ -27,7 +25,7 @@ def _workspace_root() -> Path:
     return Path(os.environ.get("AGENT_WORKSPACE", os.getcwd())).resolve()
 
 
-def _resolve_safe_path(path: str) -> tuple[Optional[Path], Optional[str]]:
+def _resolve_safe_path(path: str) -> tuple[Path | None, str | None]:
     try:
         candidate = Path(path)
         if not candidate.is_absolute():
@@ -39,8 +37,11 @@ def _resolve_safe_path(path: str) -> tuple[Optional[Path], Optional[str]]:
         if lowered_parts & BLOCKED_PARTS:
             return None, "Access to protected repository metadata is not allowed"
         name = resolved.name.lower()
-        if (name in SENSITIVE_NAMES or name.startswith(".env.")
-                or resolved.suffix.lower() in SENSITIVE_SUFFIXES):
+        if (
+            name in SENSITIVE_NAMES
+            or name.startswith(".env.")
+            or resolved.suffix.lower() in SENSITIVE_SUFFIXES
+        ):
             return None, "Access to sensitive files is not allowed"
         return resolved, None
     except (OSError, RuntimeError, ValueError):
@@ -61,19 +62,24 @@ async def file_read(path: str, encoding: str = "utf-8", max_lines: int = 500) ->
         lines = content.split("\n")
         if len(lines) > max_lines:
             truncated = "\n".join(lines[:max_lines])
-            return json.dumps({
-                "path": str(p.absolute()),
-                "content": truncated,
-                "total_lines": len(lines),
-                "truncated": True,
-            })
-        return json.dumps({"path": str(p.absolute()), "content": content, "total_lines": len(lines)})
+            return json.dumps(
+                {
+                    "path": str(p.absolute()),
+                    "content": truncated,
+                    "total_lines": len(lines),
+                    "truncated": True,
+                }
+            )
+        return json.dumps(
+            {"path": str(p.absolute()), "content": content, "total_lines": len(lines)}
+        )
     except Exception as e:
         return json.dumps({"error": str(e)})
 
 
-async def file_write(path: str, content: str, encoding: str = "utf-8",
-                      create_dirs: bool = True) -> str:
+async def file_write(
+    path: str, content: str, encoding: str = "utf-8", create_dirs: bool = True
+) -> str:
     """写入文件"""
     p, error = _resolve_safe_path(path)
     if error or p is None:
@@ -87,8 +93,9 @@ async def file_write(path: str, content: str, encoding: str = "utf-8",
         return json.dumps({"error": str(e)})
 
 
-async def file_list(path: str = ".", pattern: str = "*",
-                     recursive: bool = False, max_items: int = 100) -> str:
+async def file_list(
+    path: str = ".", pattern: str = "*", recursive: bool = False, max_items: int = 100
+) -> str:
     """列出文件"""
     p, error = _resolve_safe_path(path)
     if error or p is None:
@@ -96,10 +103,7 @@ async def file_list(path: str = ".", pattern: str = "*",
     if not p.exists():
         return json.dumps({"error": f"Path not found: {path}"})
 
-    if recursive:
-        items = list(p.rglob(pattern))
-    else:
-        items = list(p.glob(pattern))
+    items = list(p.rglob(pattern)) if recursive else list(p.glob(pattern))
 
     result = []
     for item in items[:max_items]:
@@ -107,25 +111,34 @@ async def file_list(path: str = ".", pattern: str = "*",
             if _resolve_safe_path(str(item))[1]:
                 continue
             stat = item.stat()
-            result.append({
-                "name": item.name,
-                "path": str(item.relative_to(p)),
-                "type": "dir" if item.is_dir() else "file",
-                "size": stat.st_size if item.is_file() else 0,
-            })
+            result.append(
+                {
+                    "name": item.name,
+                    "path": str(item.relative_to(p)),
+                    "type": "dir" if item.is_dir() else "file",
+                    "size": stat.st_size if item.is_file() else 0,
+                }
+            )
         except OSError:
             pass
 
-    return json.dumps({
-        "path": str(p.absolute()),
-        "items": result,
-        "total": len(items),
-        "truncated": len(items) > max_items,
-    })
+    return json.dumps(
+        {
+            "path": str(p.absolute()),
+            "items": result,
+            "total": len(items),
+            "truncated": len(items) > max_items,
+        }
+    )
 
 
-async def file_search(path: str, query: str, recursive: bool = True,
-                       case_sensitive: bool = False, max_results: int = 20) -> str:
+async def file_search(
+    path: str,
+    query: str,
+    recursive: bool = True,
+    case_sensitive: bool = False,
+    max_results: int = 20,
+) -> str:
     """搜索文件内容"""
     p, error = _resolve_safe_path(path)
     if error or p is None:
@@ -138,23 +151,43 @@ async def file_search(path: str, query: str, recursive: bool = True,
     q = query if case_sensitive else query.lower()
 
     for f in files:
-        if (_resolve_safe_path(str(f))[1] is None
-                and f.is_file()
-                and f.suffix in (".py", ".md", ".txt", ".toml", ".yaml", ".json",
-                                 ".js", ".ts", ".html", ".css", ".go", ".rs")):
+        if (
+            _resolve_safe_path(str(f))[1] is None
+            and f.is_file()
+            and f.suffix
+            in (
+                ".py",
+                ".md",
+                ".txt",
+                ".toml",
+                ".yaml",
+                ".json",
+                ".js",
+                ".ts",
+                ".html",
+                ".css",
+                ".go",
+                ".rs",
+            )
+        ):
             try:
                 content = f.read_text(errors="ignore")
                 content_to_search = content if case_sensitive else content.lower()
                 if q in content_to_search:
                     lines = content.split("\n")
-                    matches = [(i+1, l) for i, l in enumerate(lines)
-                               if q in (l if case_sensitive else l.lower())]
-                    results.append({
-                        "file": str(f.relative_to(p)),
-                        "matches": len(matches),
-                        "first_match_line": matches[0][0] if matches else 0,
-                        "preview": matches[0][1].strip()[:200] if matches else "",
-                    })
+                    matches = [
+                        (index + 1, line)
+                        for index, line in enumerate(lines)
+                        if q in (line if case_sensitive else line.lower())
+                    ]
+                    results.append(
+                        {
+                            "file": str(f.relative_to(p)),
+                            "matches": len(matches),
+                            "first_match_line": matches[0][0] if matches else 0,
+                            "preview": matches[0][1].strip()[:200] if matches else "",
+                        }
+                    )
             except Exception:
                 pass
 

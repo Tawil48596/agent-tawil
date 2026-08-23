@@ -2,7 +2,8 @@
 
 import asyncio
 from collections import deque
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 
 class TaskScheduler:
@@ -45,12 +46,15 @@ class TaskScheduler:
             for t in done:
                 result = t.result()
                 results.append(result)
-                task_id = result.get("task_id", "")
+                result.get("task_id", "")
 
                 # 检查依赖满足的等待任务
                 newly_ready = []
                 for tid, wtask in list(waiting.items()):
-                    if all(d in [r.get("task_id") for r in results] for d in wtask.get("dependencies", [])):
+                    if all(
+                        d in [r.get("task_id") for r in results]
+                        for d in wtask.get("dependencies", [])
+                    ):
                         newly_ready.append(tid)
                 for tid in newly_ready:
                     ready.append(waiting.pop(tid))

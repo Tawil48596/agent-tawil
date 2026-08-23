@@ -1,7 +1,7 @@
 """并行协作: A ‖ B ‖ C"""
 
 import asyncio
-from typing import Callable
+from collections.abc import Callable
 
 
 class ParallelPattern:

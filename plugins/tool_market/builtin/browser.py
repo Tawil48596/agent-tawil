@@ -83,12 +83,14 @@ async def browser_navigate(url: str, max_chars: int = 20000) -> str:
         return json.dumps(result, ensure_ascii=False)
 
     except ImportError:
-        return json.dumps({
-            "error": (
-                "Playwright not installed. Run: pip install playwright "
-                "&& playwright install chromium"
-            )
-        })
+        return json.dumps(
+            {
+                "error": (
+                    "Playwright not installed. Run: pip install playwright "
+                    "&& playwright install chromium"
+                )
+            }
+        )
     except Exception as e:
         logger.warning("Browser navigate failed", url=url, error=str(e))
         return json.dumps({"error": str(e), "url": url})
@@ -110,8 +112,14 @@ async def browser_screenshot(url: str, selector: str = "body") -> str:
                 screenshot = await element.screenshot(type="png")
                 b64 = base64.b64encode(screenshot).decode()
                 await browser.close()
-                return json.dumps({"url": url, "screenshot_base64": b64[:200] + "...",
-                                    "format": "png", "note": "truncated for display"})
+                return json.dumps(
+                    {
+                        "url": url,
+                        "screenshot_base64": b64[:200] + "...",
+                        "format": "png",
+                        "note": "truncated for display",
+                    }
+                )
             await browser.close()
             return json.dumps({"error": f"Selector not found: {selector}"})
 

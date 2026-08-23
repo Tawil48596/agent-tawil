@@ -3,8 +3,6 @@
 import json
 import sqlite3
 import uuid
-from datetime import datetime
-from typing import Optional
 
 
 class SessionBranch:
@@ -13,12 +11,9 @@ class SessionBranch:
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
 
-    def fork(self, session_id: str, at_message_id: int,
-              new_title: str = None) -> Optional[str]:
+    def fork(self, session_id: str, at_message_id: int, new_title: str = None) -> str | None:
         """从指定消息点创建分支"""
-        parent = self._conn.execute(
-            "SELECT * FROM sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        parent = self._conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
         if not parent:
             return None
 
@@ -28,8 +23,13 @@ class SessionBranch:
         self._conn.execute(
             """INSERT INTO sessions (id, title, source, parent_id, metadata)
                VALUES (?, ?, ?, ?, ?)""",
-            (branch_id, title, parent["source"], session_id,
-             json.dumps({"forked_at_msg": at_message_id})),
+            (
+                branch_id,
+                title,
+                parent["source"],
+                session_id,
+                json.dumps({"forked_at_msg": at_message_id}),
+            ),
         )
 
         # 复制分叉点之前的消息
@@ -40,10 +40,17 @@ class SessionBranch:
 
         for msg in messages:
             self._conn.execute(
-                """INSERT INTO messages (session_id, parent_msg_id, role, content, tool_calls, token_count)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (branch_id, msg["parent_msg_id"], msg["role"], msg["content"],
-                 msg["tool_calls"], msg["token_count"]),
+                "INSERT INTO messages "
+                "(session_id, parent_msg_id, role, content, tool_calls, token_count) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    branch_id,
+                    msg["parent_msg_id"],
+                    msg["role"],
+                    msg["content"],
+                    msg["tool_calls"],
+                    msg["token_count"],
+                ),
             )
 
         self._conn.commit()

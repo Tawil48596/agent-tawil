@@ -1,6 +1,6 @@
 """Memory API"""
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter(prefix="/api/v1/memory", tags=["memory"])
 
@@ -41,18 +41,21 @@ async def list_memory(
     )
     return {
         "entries": [_serialize(entry) for entry in entries],
-        "total": len(ltm.list_entries(
-            limit=ltm.count or 1,
-            user_id=user_id or None,
-            project_id=project_id or None,
-            memory_type=memory_type or None,
-        )),
+        "total": len(
+            ltm.list_entries(
+                limit=ltm.count or 1,
+                user_id=user_id or None,
+                project_id=project_id or None,
+                memory_type=memory_type or None,
+            )
+        ),
     }
 
 
 @router.post("")
 async def save_memory(body: dict, request: Request):
     from plugins.memory.long_term import MemoryEntry
+
     ltm = request.app.state.long_term_memory
     content = str(body.get("content", "")).strip()
     if not content:

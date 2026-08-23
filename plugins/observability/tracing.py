@@ -2,8 +2,6 @@
 
 import time
 import uuid
-from contextlib import contextmanager
-from typing import Optional
 
 
 class TraceSpan:
@@ -14,16 +12,22 @@ class TraceSpan:
         self.name = name
         self.type = span_type
         self.start_time = time.time()
-        self.end_time: Optional[float] = None
+        self.end_time: float | None = None
         self.attributes: dict = {}
         self.events: list[dict] = []
 
-    def add_event(self, name: str, attributes: dict = None): self.events.append({"name": name, "time": time.time(), "attrs": attributes or {}})
-    def set_attribute(self, key: str, value): self.attributes[key] = value
-    def finish(self): self.end_time = time.time()
+    def add_event(self, name: str, attributes: dict = None):
+        self.events.append({"name": name, "time": time.time(), "attrs": attributes or {}})
+
+    def set_attribute(self, key: str, value):
+        self.attributes[key] = value
+
+    def finish(self):
+        self.end_time = time.time()
 
     @property
-    def duration_ms(self) -> float: return ((self.end_time or time.time()) - self.start_time) * 1000
+    def duration_ms(self) -> float:
+        return ((self.end_time or time.time()) - self.start_time) * 1000
 
 
 class TracingManager:
@@ -40,6 +44,12 @@ class TracingManager:
         self._active[span.span_id] = span
         return span
 
-    def end_span(self, span: TraceSpan): span.finish(); self._active.pop(span.span_id, None)
-    def get_trace(self, trace_id: str) -> Optional[TraceSpan]: return self._traces.get(trace_id)
-    def list_traces(self, limit: int = 50) -> list: return list(self._traces.values())[:limit]
+    def end_span(self, span: TraceSpan):
+        span.finish()
+        self._active.pop(span.span_id, None)
+
+    def get_trace(self, trace_id: str) -> TraceSpan | None:
+        return self._traces.get(trace_id)
+
+    def list_traces(self, limit: int = 50) -> list:
+        return list(self._traces.values())[:limit]

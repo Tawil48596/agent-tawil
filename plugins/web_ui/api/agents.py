@@ -56,8 +56,15 @@ async def execute_task(plan_id: str, request: Request):
         "plan_id": plan.id,
         "status": plan.status.value,
         "progress": orch.get_progress(plan_id),
-        "tasks": [{"id": t.id, "goal": t.goal[:80], "status": t.status.value,
-                    "result": (t.result or "")[:200]} for t in plan.tasks],
+        "tasks": [
+            {
+                "id": t.id,
+                "goal": t.goal[:80],
+                "status": t.status.value,
+                "result": (t.result or "")[:200],
+            }
+            for t in plan.tasks
+        ],
     }
 
 
@@ -74,11 +81,22 @@ async def get_task(plan_id: str, request: Request):
     if not plan:
         raise HTTPException(404, "Plan not found")
     return {
-        "id": plan.id, "title": plan.title, "mode": plan.mode.value,
-        "status": plan.status.value, "progress": orch.get_progress(plan_id),
-        "tasks": [{"id": t.id, "goal": t.goal, "status": t.status.value,
-                    "result": t.result, "error": t.error,
-                    "progress": t.progress} for t in plan.tasks],
+        "id": plan.id,
+        "title": plan.title,
+        "mode": plan.mode.value,
+        "status": plan.status.value,
+        "progress": orch.get_progress(plan_id),
+        "tasks": [
+            {
+                "id": t.id,
+                "goal": t.goal,
+                "status": t.status.value,
+                "result": t.result,
+                "error": t.error,
+                "progress": t.progress,
+            }
+            for t in plan.tasks
+        ],
     }
 
 
@@ -105,10 +123,16 @@ async def pending_hitl(session_id: str = "", request: Request = None):
     pending = hitl.get_pending(session_id=session_id)
     return {
         "requests": [
-            {"id": r.id, "type": r.type.value, "title": r.title,
-             "description": r.description, "proposed_action": r.proposed_action,
-             "agent_state": r.agent_state, "created_at": r.created_at,
-             "timeout": r.timeout}
+            {
+                "id": r.id,
+                "type": r.type.value,
+                "title": r.title,
+                "description": r.description,
+                "proposed_action": r.proposed_action,
+                "agent_state": r.agent_state,
+                "created_at": r.created_at,
+                "timeout": r.timeout,
+            }
             for r in pending
         ],
     }
@@ -138,10 +162,12 @@ async def hitl_action(req_id: str, body: HITLActionRequest, request: Request):
 @router.get("/checkpoints/{task_id}")
 async def list_checkpoints(task_id: str, request: Request):
     store = request.app.state.checkpoint_store
-    return {"checkpoints": [
-        {"id": c.id, "stage": c.stage, "created_at": c.created_at}
-        for c in store.list_for_task(task_id)
-    ]}
+    return {
+        "checkpoints": [
+            {"id": c.id, "stage": c.stage, "created_at": c.created_at}
+            for c in store.list_for_task(task_id)
+        ]
+    }
 
 
 @router.post("/checkpoints/{task_id}/recover")

@@ -60,19 +60,18 @@ async def test_dispatcher_audit_events_preserve_trace_and_redact_arguments(tmp_p
     dispatcher.register("credential_check", lambda password: "ok")
 
     result = await dispatcher.execute_parallel(
-        [{
-            "function": {
-                "name": "credential_check",
-                "arguments": '{"password":"secret"}',
+        [
+            {
+                "function": {
+                    "name": "credential_check",
+                    "arguments": '{"password":"secret"}',
+                }
             }
-        }],
+        ],
         context={"id": "session-1", "trace_id": "trace-1"},
     )
 
-    events = [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-    ]
+    events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     started = next(event for event in events if event["event_type"] == "tool.started")
     assert result[0]["output"] == "ok"
     assert started["arguments"]["password"] == "[REDACTED]"

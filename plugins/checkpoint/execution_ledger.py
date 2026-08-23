@@ -23,7 +23,7 @@ class ToolExecutionLedger:
 
     @staticmethod
     def _digest(session_id: str, call_id: str) -> str:
-        value = f"{session_id}\0{call_id}".encode("utf-8")
+        value = f"{session_id}\0{call_id}".encode()
         return hashlib.sha256(value).hexdigest()
 
     def _entry_path(self, session_id: str, call_id: str) -> Path:
@@ -50,9 +50,7 @@ class ToolExecutionLedger:
         if not session_id or not call_id:
             return None
         try:
-            payload = json.loads(
-                self._entry_path(session_id, call_id).read_text(encoding="utf-8")
-            )
+            payload = json.loads(self._entry_path(session_id, call_id).read_text(encoding="utf-8"))
         except (FileNotFoundError, OSError, json.JSONDecodeError):
             return None
         result = payload.get("result")
@@ -82,10 +80,7 @@ class ToolExecutionLedger:
 
         arguments_digest = self._arguments_digest(arguments)
         if payload is not None:
-            if (
-                payload.get("tool") != tool
-                or payload.get("arguments_digest") != arguments_digest
-            ):
+            if payload.get("tool") != tool or payload.get("arguments_digest") != arguments_digest:
                 return {"action": "conflict"}
             status = payload.get("status", "completed" if "result" in payload else "uncertain")
             if status == "completed" and isinstance(payload.get("result"), dict):
@@ -98,13 +93,16 @@ class ToolExecutionLedger:
             return {"action": "uncertain", "reason": payload.get("reason", status)}
 
         attempt_id = uuid.uuid4().hex
-        self._write(path, {
-            "status": "running",
-            "tool": tool,
-            "arguments_digest": arguments_digest,
-            "attempt_id": attempt_id,
-            "lease_expires_at": time.time() + self._lease_seconds,
-        })
+        self._write(
+            path,
+            {
+                "status": "running",
+                "tool": tool,
+                "arguments_digest": arguments_digest,
+                "attempt_id": attempt_id,
+                "lease_expires_at": time.time() + self._lease_seconds,
+            },
+        )
         return {"action": "execute", "attempt_id": attempt_id}
 
     def release(self, session_id: str, call_id: str, attempt_id: str) -> None:
@@ -119,9 +117,7 @@ class ToolExecutionLedger:
         if payload.get("status") == "running" and payload.get("attempt_id") == attempt_id:
             path.unlink(missing_ok=True)
 
-    def mark_uncertain(
-        self, session_id: str, call_id: str, attempt_id: str, reason: str
-    ) -> None:
+    def mark_uncertain(self, session_id: str, call_id: str, attempt_id: str, reason: str) -> None:
         """Fail closed when execution may have produced an external side effect."""
         if not session_id or not call_id or not attempt_id:
             return

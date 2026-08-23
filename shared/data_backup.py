@@ -7,8 +7,9 @@ import json
 import os
 import uuid
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 ARCHIVE_SCHEMA_VERSION = 1
 
@@ -24,11 +25,11 @@ def _safe_member(name: str) -> PurePosixPath:
     return member
 
 
-def create_backup(data_root: str | Path, archive_path: str | Path) -> dict:
+def create_backup(data_root: str | Path, archive_path: str | Path) -> dict[str, Any]:
     root = Path(data_root).resolve()
     archive = Path(archive_path)
     archive.parent.mkdir(parents=True, exist_ok=True)
-    files: list[dict] = []
+    files: list[dict[str, Any]] = []
     temporary = archive.with_name(f".{archive.name}.{uuid.uuid4().hex}.tmp")
     try:
         with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as bundle:
@@ -41,7 +42,7 @@ def create_backup(data_root: str | Path, archive_path: str | Path) -> dict:
                     files.append({"path": name, "size": len(content), "sha256": _digest(content)})
             manifest = {
                 "schema_version": ARCHIVE_SCHEMA_VERSION,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
                 "files": files,
             }
             bundle.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False))
@@ -51,9 +52,9 @@ def create_backup(data_root: str | Path, archive_path: str | Path) -> dict:
         temporary.unlink(missing_ok=True)
 
 
-def verify_backup(archive_path: str | Path) -> dict:
+def verify_backup(archive_path: str | Path) -> dict[str, Any]:
     with zipfile.ZipFile(archive_path, "r") as bundle:
-        manifest = json.loads(bundle.read("manifest.json"))
+        manifest: dict[str, Any] = json.loads(bundle.read("manifest.json"))
         version = int(manifest.get("schema_version", 0))
         if version > ARCHIVE_SCHEMA_VERSION:
             raise ValueError(f"Unsupported backup schema version: {version}")
@@ -67,7 +68,7 @@ def verify_backup(archive_path: str | Path) -> dict:
         return manifest
 
 
-def restore_backup(archive_path: str | Path, data_root: str | Path) -> dict:
+def restore_backup(archive_path: str | Path, data_root: str | Path) -> dict[str, Any]:
     manifest = verify_backup(archive_path)
     root = Path(data_root).resolve()
     root.mkdir(parents=True, exist_ok=True)

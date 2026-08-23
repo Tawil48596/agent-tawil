@@ -1,8 +1,8 @@
 """Test RAG Chunkers"""
 
+from plugins.rag_engine.chunker.code_aware import CodeAwareChunker
 from plugins.rag_engine.chunker.fixed_size import FixedSizeChunker
 from plugins.rag_engine.chunker.semantic import SemanticChunker
-from plugins.rag_engine.chunker.code_aware import CodeAwareChunker
 
 
 def test_fixed_chunker():

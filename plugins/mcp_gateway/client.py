@@ -1,7 +1,7 @@
 """MCP Client — 连接外部 MCP Server"""
 
 import json
-from typing import Any, Optional
+from typing import Any
 
 import structlog
 
@@ -19,7 +19,7 @@ class MCPClient:
         self._connected = False
         self._tools: list[dict] = []
         self._server_info: dict[str, Any] = {}
-        self._transport: Optional[Any] = None  # stdio / sse / websocket
+        self._transport: Any | None = None  # stdio / sse / websocket
 
     async def connect(self) -> bool:
         """连接到 MCP Server"""
@@ -53,10 +53,13 @@ class MCPClient:
         )
 
         # 发送 initialize
-        init_result = await self._send_request("initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-        })
+        init_result = await self._send_request(
+            "initialize",
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+            },
+        )
         self._server_info = init_result
         self._connected = True
 
@@ -73,17 +76,29 @@ class MCPClient:
 
         self._transport = httpx.AsyncClient(base_url=self._endpoint, timeout=30.0)
 
-        resp = await self._transport.post("/mcp", json={
-            "jsonrpc": "2.0", "method": "initialize", "params": {
-                "protocolVersion": "2024-11-05", "capabilities": {},
-            }, "id": 1,
-        })
+        resp = await self._transport.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                },
+                "id": 1,
+            },
+        )
         self._server_info = resp.json().get("result", {})
         self._connected = True
 
-        resp = await self._transport.post("/mcp", json={
-            "jsonrpc": "2.0", "method": "tools/list", "id": 2,
-        })
+        resp = await self._transport.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "method": "tools/list",
+                "id": 2,
+            },
+        )
         self._tools = resp.json().get("result", {}).get("tools", [])
         logger.info("MCP HTTP connected", tools=len(self._tools))
         return True
@@ -106,10 +121,13 @@ class MCPClient:
 
     async def call_tool(self, name: str, arguments: dict) -> dict:
         """调用远程 MCP 工具"""
-        return await self._send_request("tools/call", {
-            "name": name,
-            "arguments": arguments,
-        })
+        return await self._send_request(
+            "tools/call",
+            {
+                "name": name,
+                "arguments": arguments,
+            },
+        )
 
     async def _send_request(self, method: str, params: dict) -> dict:
         """发送 JSON-RPC 请求"""

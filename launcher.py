@@ -12,7 +12,6 @@ import uvicorn
 
 from app import create_app, load_config, setup_logging
 
-
 HOST = "127.0.0.1"
 PORT = 8010
 APP_URL = f"http://{HOST}:{PORT}/"

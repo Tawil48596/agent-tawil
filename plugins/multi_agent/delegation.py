@@ -2,7 +2,6 @@
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Optional
 
 
 @dataclass
@@ -10,7 +9,7 @@ class SubAgentConfig:
     goal: str
     context: str = ""
     toolsets: list[str] = field(default_factory=list)
-    model: Optional[str] = None
+    model: str | None = None
     max_turns: int = 30
     role: str = "leaf"
     timeout: int = 120
@@ -37,10 +36,15 @@ class DelegationEngine:
 
         # 写入黑板
         if self._blackboard:
-            self._blackboard.write(f"agent:{agent_id}:config", {
-                "goal": config.goal, "toolsets": config.toolsets,
-                "model": config.model, "max_turns": config.max_turns,
-            })
+            self._blackboard.write(
+                f"agent:{agent_id}:config",
+                {
+                    "goal": config.goal,
+                    "toolsets": config.toolsets,
+                    "model": config.model,
+                    "max_turns": config.max_turns,
+                },
+            )
 
         return agent_id
 
@@ -56,6 +60,7 @@ class DelegationEngine:
         if self._engine:
             try:
                 import asyncio
+
                 response = await asyncio.wait_for(
                     self._engine.run(
                         user_message=config.goal,
@@ -78,9 +83,11 @@ class DelegationEngine:
         agent_info["result"] = f"[Simulated] {config.goal}"
         return {"agent_id": agent_id, "status": "completed", "result": agent_info["result"]}
 
-    def get_status(self, agent_id: str) -> Optional[dict]:
+    def get_status(self, agent_id: str) -> dict | None:
         return self._active_agents.get(agent_id)
 
     def list_active(self) -> list[dict]:
-        return [{"id": aid, "status": info["status"], "goal": info["config"].goal}
-                for aid, info in self._active_agents.items()]
+        return [
+            {"id": aid, "status": info["status"], "goal": info["config"].goal}
+            for aid, info in self._active_agents.items()
+        ]

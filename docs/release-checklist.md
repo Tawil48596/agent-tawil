@@ -4,7 +4,7 @@
 
 1. Confirm `git status` is clean and inspect every committed path.
 2. Run `python -m pytest` and require all tests to pass.
-3. Run `npm ci` when dependencies change, then `npm run build`.
+3. Run `npm ci` when dependencies change, then require `npm run lint`, `npm test` and `npm run build` to pass.
 4. Run `git diff --check` and scan tracked files for API keys and tokens.
 5. Verify Python, web, FastAPI and runtime versions are identical.
 6. Start in development mode and check `/health`, `/ready`, `/metrics` and the Web UI.

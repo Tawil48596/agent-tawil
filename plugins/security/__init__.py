@@ -3,8 +3,8 @@
 from plugins.security.content_filter import ContentFilter
 from plugins.security.execution_guard import ExecutionGuard
 from plugins.security.output_guard import OutputGuard
-from plugins.security.tool_approval import ToolApproval, ApprovalStatus
 from plugins.security.security_plugin import SecurityPlugin
+from plugins.security.tool_approval import ApprovalStatus, ToolApproval
 
 __all__ = [
     "ContentFilter",

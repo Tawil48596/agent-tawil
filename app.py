@@ -13,7 +13,6 @@ AI Agent Platform — 应用入口
 
 import json
 import os
-import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -24,6 +23,7 @@ import yaml
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from yaml.resolver import BaseResolver
+
 from shared.version import APP_VERSION
 
 # ── Config loading ──
@@ -111,6 +111,7 @@ def setup_logging(config: dict[str, Any]) -> None:
 
     # Also configure stdlib logging to route through structlog
     import logging
+
     logging.basicConfig(level=level, format="%(message)s")
 
 
@@ -123,6 +124,7 @@ logger = structlog.get_logger()
 def create_app(config: dict[str, Any]) -> FastAPI:
     server_cfg = config.get("server", {})
     from plugins.security.baseline import enforce_production_config
+
     enforce_production_config(config)
 
     @asynccontextmanager
@@ -132,9 +134,11 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         from core.di_container import DIContainer
         from core.event_bus import EventBus
         from core.plugin_manager import PluginManager
+
         container = DIContainer()
         event_bus = EventBus()
-        plugin_manager = PluginManager(["plugins"], event_bus=event_bus, container=container)
+        plugin_root = Path(__file__).resolve().parent / "plugins"
+        plugin_manager = PluginManager([str(plugin_root)], event_bus=event_bus, container=container)
         container.register("config", config)
         container.register("event_bus", event_bus)
         app.state.container = container
@@ -142,8 +146,8 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         app.state.plugin_manager = plugin_manager
 
         # ── Phase 1: Agent 引擎 ──
-        from plugins.agent_engine.model_router import ModelRouter
         from plugins.agent_engine.engine import AgentEngine
+        from plugins.agent_engine.model_router import ModelRouter
         from plugins.agent_engine.tool_dispatch import ToolDispatcher
         from plugins.checkpoint.execution_ledger import ToolExecutionLedger
 
@@ -161,9 +165,12 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
         async def _echo(text: str) -> str:
             return text
+
         async def _now() -> str:
             import datetime
+
             return datetime.datetime.now().isoformat()
+
         tool_dispatcher.register("echo", _echo)
         tool_dispatcher.register("get_current_time", _now)
 
@@ -173,16 +180,18 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         app.state.agent_engine = engine
 
         available = router.list_available_models()
-        logger.info("Agent engine ready",
-                     default_model=router._default_model,
-                     available_models=len(available))
+        logger.info(
+            "Agent engine ready",
+            default_model=router._default_model,
+            available_models=len(available),
+        )
 
         # ── Phase 1: 三级安全网 ──
+        from plugins.observability.audit import AuditLog
         from plugins.security.content_filter import ContentFilter
         from plugins.security.execution_guard import ExecutionGuard
         from plugins.security.output_guard import OutputGuard
         from plugins.security.tool_approval import ToolApproval
-        from plugins.observability.audit import AuditLog
 
         app.state.content_filter = ContentFilter()
         app.state.execution_guard = ExecutionGuard(config.get("security", {}))
@@ -191,6 +200,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         app.state.tool_approval = tool_approval
         audit_log = AuditLog(config.get("security", {}).get("audit_log", {}))
         app.state.audit_log = audit_log
+
         def _record_tool_event(event_type: str, **fields) -> None:
             audit_log.record(event_type, **fields)
             metrics_collector.record_tool_event(event_type, **fields)
@@ -212,20 +222,24 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
         # ── Phase 1: 沙箱 ──
         from plugins.security.sandbox import Sandbox, SandboxConfig
+
         sandbox_cfg = config.get("security", {}).get("sandbox", {})
-        sandbox = Sandbox(SandboxConfig(
-            mode=sandbox_cfg.get("mode", "subprocess"),
-            memory_limit=sandbox_cfg.get("memory_limit", "512m"),
-            cpu_limit=sandbox_cfg.get("cpu_limit", 1.0),
-            timeout=sandbox_cfg.get("timeout", 30),
-            network_enabled=not sandbox_cfg.get("network_disabled", True),
-            read_only_root=sandbox_cfg.get("read_only_root", True),
-        ))
+        sandbox = Sandbox(
+            SandboxConfig(
+                mode=sandbox_cfg.get("mode", "subprocess"),
+                memory_limit=sandbox_cfg.get("memory_limit", "512m"),
+                cpu_limit=sandbox_cfg.get("cpu_limit", 1.0),
+                timeout=sandbox_cfg.get("timeout", 30),
+                network_enabled=not sandbox_cfg.get("network_disabled", True),
+                read_only_root=sandbox_cfg.get("read_only_root", True),
+            )
+        )
         app.state.sandbox = sandbox
         logger.info("Sandbox ready", mode=sandbox.mode)
 
         # ── Phase 1: 分布式锁 ──
         from plugins.locks.lock_manager import LockManager
+
         redis_url = config.get("redis", {}).get("url", "")
         lock_manager = LockManager(redis_url if redis_url else None)
         app.state.lock_manager = lock_manager
@@ -233,11 +247,13 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
         # ── Phase 1: 降级链 ──
         from plugins.resilience.resilience_manager import ResilienceManager
+
         app.state.resilience = ResilienceManager(config)
         logger.info("Resilience manager ready (L1/L2/L3 degradation)")
 
         # ── Phase 1: 任务队列 ──
-        from plugins.worker.task_queue import TaskQueue, task_sandbox_exec, task_repo_clone
+        from plugins.worker.task_queue import TaskQueue, task_repo_clone, task_sandbox_exec
+
         task_queue = TaskQueue(max_workers=4)
         task_queue.register_handler("sandbox_exec", task_sandbox_exec)
         task_queue.register_handler("repo_clone", task_repo_clone)
@@ -246,19 +262,23 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         logger.info("Task queue ready", workers=4)
 
         # ── Phase 2: MCP 网关 + GitHub ──
-        from plugins.mcp_gateway.gateway import MCPGateway, MCPServerInfo
         from plugins.mcp_gateway.adapters.github import GitHubMCPAdapter
+        from plugins.mcp_gateway.gateway import MCPGateway, MCPServerInfo
 
         mcp_gateway = MCPGateway(config)
 
         # GitHub 适配器
-        github_token = config.get("llm", {}).get("providers", {}).get("github", {}).get("api_key", "")
+        github_token = (
+            config.get("llm", {}).get("providers", {}).get("github", {}).get("api_key", "")
+        )
         if not github_token:
             github_token = os.environ.get("GITHUB_TOKEN", "")
         github_adapter = GitHubMCPAdapter(token=github_token)
         if github_adapter.is_configured:
             await mcp_gateway.register_server(
-                MCPServerInfo(id="github", name="GitHub", type="github", endpoint="builtin://github"),
+                MCPServerInfo(
+                    id="github", name="GitHub", type="github", endpoint="builtin://github"
+                ),
                 adapter=github_adapter,
             )
             logger.info("MCP: GitHub adapter connected")
@@ -269,11 +289,13 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         await mcp_gateway.discover()
         app.state.mcp_gateway = mcp_gateway
         mcp_tools = mcp_gateway.list_all_tools()
-        logger.info("MCP gateway ready", servers=len(mcp_gateway.list_servers()),
-                     tools=len(mcp_tools))
+        logger.info(
+            "MCP gateway ready", servers=len(mcp_gateway.list_servers()), tools=len(mcp_tools)
+        )
 
         # ── Phase 2: 对话持久化 ──
         from plugins.conversation.session_store import SessionStore
+
         db_url = config.get("database", {}).get("url", "sqlite:///data/agent.db")
         db_path = db_url.replace("sqlite:///", "")
         session_store = SessionStore(db_path)
@@ -282,8 +304,8 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         logger.info("Session store ready", db=db_path)
 
         # ── Phase 2: 长期记忆 ──
-        from plugins.memory.long_term import LongTermMemory
         from plugins.memory.consolidation import MemoryConsolidator
+        from plugins.memory.long_term import LongTermMemory
 
         long_term = LongTermMemory(config)
         consolidator = MemoryConsolidator(long_term, router)
@@ -293,37 +315,40 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
         # ── Phase 3: RAG 引擎 ──
         from plugins.rag_engine.engine import RAGEngine
+
         rag_engine = RAGEngine(config)
         app.state.rag_engine = rag_engine
 
         # 注册工具: expand_history_node (Agent 主动解压缩上下文)
         async def _expand_history_node(node_id: str, depth: int = 1) -> str:
             return json.dumps({"node_id": node_id, "depth": depth, "action": "expanded"})
+
         tool_dispatcher.register("expand_history_node", _expand_history_node)
 
         logger.info("RAG engine ready")
 
         # ── Phase 3: 分层上下文树 ──
         from plugins.context_tree.tree_builder import ContextTree
+
         context_tree = ContextTree(max_total_tokens=128000)
         context_tree.set_environment(
-            "你是一个强大的 AI Agent。使用工具完成任务，保持回答准确。\n"
-            "对危险操作必须先获得审批。"
+            "你是一个强大的 AI Agent。使用工具完成任务，保持回答准确。\n对危险操作必须先获得审批。"
         )
         app.state.context_tree = context_tree
         logger.info("Context tree ready")
 
         # ── Phase 3: 宏工具 ──
         from plugins.macro_tools.macro_registry import MacroRegistry
+
         macro_registry = MacroRegistry()
         app.state.macro_registry = macro_registry
         logger.info("Macro tools ready")
 
         # ── Phase 4: 工具市场 ──
-        from plugins.tool_market.registry import ToolRegistry, ToolDef
+        from plugins.generative_ui.schema_mapper import SchemaMapper
         from plugins.tool_market.marketplace import Marketplace, MarketplaceEntry
         from plugins.tool_market.package_store import ToolPackageStore
-        from plugins.generative_ui.schema_mapper import SchemaMapper
+        from plugins.tool_market.registry import ToolDef, ToolRegistry
 
         tool_registry = ToolRegistry()
         marketplace = Marketplace(tool_registry)
@@ -339,86 +364,185 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         app.state.schema_mapper = schema_mapper
 
         # 注册内置工具
-        from plugins.tool_market.builtin.web_search import web_search, web_extract
-        from plugins.tool_market.builtin.file_ops import file_read, file_write, file_list, file_search
         from plugins.tool_market.builtin.browser import browser_navigate, browser_screenshot
+        from plugins.tool_market.builtin.file_ops import (
+            file_list,
+            file_read,
+            file_search,
+            file_write,
+        )
+        from plugins.tool_market.builtin.web_search import web_extract, web_search
 
-        tool_registry.register(ToolDef(
-            name="web_search", description="搜索网络", toolset="builtin",
-            parameters={"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "default": 5}}, "required": ["query"]},
-            handler=web_search, tags=["search", "web"], genui_component="SearchResultList",
-        ))
-        tool_registry.register(ToolDef(
-            name="web_extract",
-            description="提取网页正文，内容由 JavaScript 渲染时可启用浏览器模式",
-            toolset="builtin",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string", "format": "uri"},
-                    "render_js": {
-                        "type": "boolean",
-                        "default": False,
-                        "description": "强制使用浏览器渲染动态页面",
+        tool_registry.register(
+            ToolDef(
+                name="web_search",
+                description="搜索网络",
+                toolset="builtin",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "limit": {"type": "integer", "default": 5},
                     },
-                    "max_chars": {
-                        "type": "integer",
-                        "default": 20000,
-                        "minimum": 1000,
-                        "maximum": 50000,
-                    },
+                    "required": ["query"],
                 },
-                "required": ["url"],
-            },
-            handler=web_extract, tags=["web", "extract"], genui_component="ArticleViewer",
-        ))
-        tool_registry.register(ToolDef(
-            name="file_read", description="读取文件", toolset="builtin",
-            parameters={"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
-            handler=file_read, tags=["file"], genui_component="CodeViewer",
-        ))
-        tool_registry.register(ToolDef(
-            name="file_write", description="写入文件", toolset="builtin",
-            parameters={"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]},
-            handler=file_write, is_dangerous=True, tags=["file"], genui_component="ConfirmationCard",
-        ))
-        tool_registry.register(ToolDef(
-            name="file_list", description="列出文件", toolset="builtin",
-            parameters={"type": "object", "properties": {"path": {"type": "string", "default": "."}, "recursive": {"type": "boolean", "default": False}}, "required": []},
-            handler=file_list, tags=["file"], genui_component="FileTree",
-        ))
-        tool_registry.register(ToolDef(
-            name="file_search", description="搜索文件内容", toolset="builtin",
-            parameters={"type": "object", "properties": {"path": {"type": "string"}, "query": {"type": "string"}}, "required": ["path", "query"]},
-            handler=file_search, tags=["file", "search"], genui_component="SearchResultList",
-        ))
-        tool_registry.register(ToolDef(
-            name="browser_navigate", description="浏览器导航", toolset="builtin",
-            parameters={"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]},
-            handler=browser_navigate, tags=["browser"], genui_component="ArticleViewer",
-            requires_packages=["playwright"],
-        ))
-        tool_registry.register(ToolDef(
-            name="browser_screenshot", description="浏览器截图", toolset="builtin",
-            parameters={"type": "object", "properties": {"url": {"type": "string"}, "selector": {"type": "string", "default": "body"}}, "required": ["url"]},
-            handler=browser_screenshot, tags=["browser"], genui_component="StatCard",
-            requires_packages=["playwright"],
-        ))
+                handler=web_search,
+                tags=["search", "web"],
+                genui_component="SearchResultList",
+            )
+        )
+        tool_registry.register(
+            ToolDef(
+                name="web_extract",
+                description="提取网页正文，内容由 JavaScript 渲染时可启用浏览器模式",
+                toolset="builtin",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "format": "uri"},
+                        "render_js": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "强制使用浏览器渲染动态页面",
+                        },
+                        "max_chars": {
+                            "type": "integer",
+                            "default": 20000,
+                            "minimum": 1000,
+                            "maximum": 50000,
+                        },
+                    },
+                    "required": ["url"],
+                },
+                handler=web_extract,
+                tags=["web", "extract"],
+                genui_component="ArticleViewer",
+            )
+        )
+        tool_registry.register(
+            ToolDef(
+                name="file_read",
+                description="读取文件",
+                toolset="builtin",
+                parameters={
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"],
+                },
+                handler=file_read,
+                tags=["file"],
+                genui_component="CodeViewer",
+            )
+        )
+        tool_registry.register(
+            ToolDef(
+                name="file_write",
+                description="写入文件",
+                toolset="builtin",
+                parameters={
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+                    "required": ["path", "content"],
+                },
+                handler=file_write,
+                is_dangerous=True,
+                tags=["file"],
+                genui_component="ConfirmationCard",
+            )
+        )
+        tool_registry.register(
+            ToolDef(
+                name="file_list",
+                description="列出文件",
+                toolset="builtin",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "default": "."},
+                        "recursive": {"type": "boolean", "default": False},
+                    },
+                    "required": [],
+                },
+                handler=file_list,
+                tags=["file"],
+                genui_component="FileTree",
+            )
+        )
+        tool_registry.register(
+            ToolDef(
+                name="file_search",
+                description="搜索文件内容",
+                toolset="builtin",
+                parameters={
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}, "query": {"type": "string"}},
+                    "required": ["path", "query"],
+                },
+                handler=file_search,
+                tags=["file", "search"],
+                genui_component="SearchResultList",
+            )
+        )
+        tool_registry.register(
+            ToolDef(
+                name="browser_navigate",
+                description="浏览器导航",
+                toolset="builtin",
+                parameters={
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+                handler=browser_navigate,
+                tags=["browser"],
+                genui_component="ArticleViewer",
+                requires_packages=["playwright"],
+            )
+        )
+        tool_registry.register(
+            ToolDef(
+                name="browser_screenshot",
+                description="浏览器截图",
+                toolset="builtin",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "selector": {"type": "string", "default": "body"},
+                    },
+                    "required": ["url"],
+                },
+                handler=browser_screenshot,
+                tags=["browser"],
+                genui_component="StatCard",
+                requires_packages=["playwright"],
+            )
+        )
 
         # 种子市场数据
-        marketplace.publish(MarketplaceEntry(
-            name="web_search", description="DuckDuckGo 搜索", version=APP_VERSION,
-            author="builtin", tags=["search", "builtin"], downloads=1000,
-        ))
-        marketplace.publish(MarketplaceEntry(
-            name="file_read", description="文件读取", version=APP_VERSION,
-            author="builtin", tags=["file", "builtin"], downloads=800,
-        ))
+        marketplace.publish(
+            MarketplaceEntry(
+                name="web_search",
+                description="DuckDuckGo 搜索",
+                version=APP_VERSION,
+                author="builtin",
+                tags=["search", "builtin"],
+                downloads=1000,
+            )
+        )
+        marketplace.publish(
+            MarketplaceEntry(
+                name="file_read",
+                description="文件读取",
+                version=APP_VERSION,
+                author="builtin",
+                tags=["file", "builtin"],
+                downloads=800,
+            )
+        )
 
         # 同步 tool_dispatcher
-        approval_required = set(
-            config.get("tool_market", {}).get("approval_required_for", [])
-        )
+        approval_required = set(config.get("tool_market", {}).get("approval_required_for", []))
         for tool in tool_registry.list_installed():
             if tool.handler:
                 tool_dispatcher.register(
@@ -427,17 +551,20 @@ def create_app(config: dict[str, Any]) -> FastAPI:
                     requires_approval=(tool.is_dangerous or tool.name in approval_required),
                 )
 
-        logger.info("Tool market ready", builtin=len(tool_registry.list_installed()),
-                     market=marketplace.get_stats()["market_size"])
+        logger.info(
+            "Tool market ready",
+            builtin=len(tool_registry.list_installed()),
+            market=marketplace.get_stats()["market_size"],
+        )
 
         # ── Phase 4: Generative UI 引擎 ──
         logger.info("Generative UI ready", components=len(schema_mapper.list_components()))
 
         # ── Phase 5: 多智能体编排 ──
-        from plugins.multi_agent.orchestrator import Orchestrator
-        from plugins.multi_agent.communication import MessageBus, Blackboard
         from plugins.checkpoint.checkpoint_store import CheckpointStore, RecoveryManager
         from plugins.hitl.hitl_manager import HITLManager
+        from plugins.multi_agent.communication import Blackboard, MessageBus
+        from plugins.multi_agent.orchestrator import Orchestrator
 
         multi_cfg = config.get("multi_agent", {})
         orchestrator = Orchestrator(
@@ -462,36 +589,46 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         # 注册代理通信工具
         async def _agent_send_message(receiver: str, content: str) -> str:
             from plugins.multi_agent.communication import AgentMessage, MessageType
-            msg = AgentMessage(sender_id="main", receiver_id=receiver,
-                                type=MessageType.INFORM, content={"text": content})
+
+            msg = AgentMessage(
+                sender_id="main",
+                receiver_id=receiver,
+                type=MessageType.INFORM,
+                content={"text": content},
+            )
             await message_bus.send(msg)
             return json.dumps({"sent": True, "receiver": receiver})
+
         async def _blackboard_write(key: str, value: str) -> str:
             blackboard.write(key, value)
             return json.dumps({"written": True, "key": key})
+
         async def _blackboard_read(key: str) -> str:
             val = blackboard.read(key)
             return json.dumps({"key": key, "value": val})
+
         async def _save_checkpoint(task_id: str, stage: str, state: str = "") -> str:
             from plugins.checkpoint.checkpoint_store import Checkpoint
-            cp = Checkpoint(task_id=task_id, stage=stage,
-                            state={"content": state} if state else {})
+
+            cp = Checkpoint(task_id=task_id, stage=stage, state={"content": state} if state else {})
             await checkpoint_store.save(cp)
             return json.dumps({"saved": True, "checkpoint_id": cp.id})
+
         tool_dispatcher.register("agent_send_message", _agent_send_message)
         tool_dispatcher.register("blackboard_write", _blackboard_write)
         tool_dispatcher.register("blackboard_read", _blackboard_read)
         tool_dispatcher.register("save_checkpoint", _save_checkpoint)
 
-        logger.info("Multi-agent orchestration ready",
-                     max_workers=5, modes="parallel+chain+hierarchical")
+        logger.info(
+            "Multi-agent orchestration ready", max_workers=5, modes="parallel+chain+hierarchical"
+        )
         logger.info("Checkpoint + HITL ready")
 
         # ── Phase 6+7: 评测 + Trace + 消息平台 ──
         from plugins.evals.runner import EvalRunner
         from plugins.evals.trace_viewer import TraceCollector
-        from plugins.messaging.platforms.telegram import TelegramAdapter
         from plugins.messaging.gateway import MessagingGateway
+        from plugins.messaging.platforms.telegram import TelegramAdapter
 
         eval_cfg = config.get("evals", {})
         eval_runner = EvalRunner(
@@ -500,7 +637,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
             max_pass_rate_regression=eval_cfg.get("max_pass_rate_regression", 0.0),
             history_limit=eval_cfg.get("history_limit", 100),
         )
-        trace_cfg = config.get("observability", {}).get("traces", {})
+        trace_cfg = config.get("observability", {}).get("tracing", {})
         trace_collector = TraceCollector(
             max_traces=trace_cfg.get("max_traces", 1000),
             storage_path=trace_cfg.get("path", "data/traces/history.json"),
@@ -519,27 +656,64 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         if telegram_bot.is_configured:
             await telegram_bot.start()
 
-        logger.info("Evals + Trace + Messaging ready",
-                     suites=len(eval_runner.list_suites()),
-                     telegram=telegram_bot.is_configured)
+        logger.info(
+            "Evals + Trace + Messaging ready",
+            suites=len(eval_runner.list_suites()),
+            telegram=telegram_bot.is_configured,
+        )
 
-        logger.info("All systems ready.",
-                     phase1="security+sandbox+lock+degradation+workers",
-                     phase2="mcp+github+session_store+long_term_memory",
-                     phase3="rag+context_tree+macro_tools",
-                     phase4="tool_market+builtin_tools+generative_ui",
-                     phase5="orchestrator+blackboard+checkpoint+hitl",
-                     phase6="evals+trace_viewer+auth+messaging",
-                     mcp_tools=len(mcp_tools),
-                     builtin_tools=len(tool_registry.list_installed()))
+        # ── Plugin lifecycle: expose the already-composed runtime exactly once ──
+        from core.runtime_assembly import RuntimeComponents, activate_plugins
+
+        runtime_components = RuntimeComponents(
+            model_router=router,
+            agent_engine=engine,
+            tool_dispatcher=tool_dispatcher,
+            content_filter=app.state.content_filter,
+            execution_guard=app.state.execution_guard,
+            output_guard=app.state.output_guard,
+            tool_approval=tool_approval,
+            session_store=session_store,
+            long_term_memory=long_term,
+            memory_consolidator=consolidator,
+            metrics_collector=metrics_collector,
+            trace_collector=trace_collector,
+            audit_log=audit_log,
+        )
+        activation = await activate_plugins(plugin_manager, container, runtime_components)
+        app.state.usage_collector = activation.usage_collector
+        app.state.usage_aggregator = activation.usage_aggregator
+        app.state.cost_calculator = activation.cost_calculator
+        logger.info(
+            "Plugin lifecycle ready",
+            discovered=activation.discovered,
+            health=plugin_manager.health(),
+        )
+
+        logger.info(
+            "All systems ready.",
+            phase1="security+sandbox+lock+degradation+workers",
+            phase2="mcp+github+session_store+long_term_memory",
+            phase3="rag+context_tree+macro_tools",
+            phase4="tool_market+builtin_tools+generative_ui",
+            phase5="orchestrator+blackboard+checkpoint+hitl",
+            phase6="evals+trace_viewer+auth+messaging",
+            mcp_tools=len(mcp_tools),
+            builtin_tools=len(tool_registry.list_installed()),
+        )
 
         yield  # App runs here
 
         # ── Graceful shutdown ──
         logger.info("Shutting down...")
-        await plugin_manager.disable_all()
-        await task_queue.stop()
-        session_store.close()
+        from core.service_lifecycle import shutdown_services
+
+        await shutdown_services(
+            plugin_manager=plugin_manager,
+            task_queue=task_queue,
+            session_store=session_store,
+            messaging_adapter=telegram_bot,
+        )
         logger.info("Goodbye.")
 
     app = FastAPI(
@@ -556,6 +730,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
     from plugins.observability.http_middleware import ObservabilityMiddleware
     from plugins.observability.metrics import MetricsCollector
+
     metrics_collector = MetricsCollector()
     app.state.metrics_collector = metrics_collector
     app.add_middleware(ObservabilityMiddleware, metrics=metrics_collector)
@@ -585,42 +760,21 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         return {"message": "Web UI not found. Open /docs for API documentation."}
 
     # ── Register API routers ──
-    from plugins.web_ui.api.chat import router as chat_router
-    from plugins.web_ui.api.mcp import router as mcp_router
-    from plugins.web_ui.api.rag import router as rag_router
-    from plugins.web_ui.api.tools import router as tools_router
-    from plugins.web_ui.api.genui import router as genui_router
-    from plugins.web_ui.api.agents import router as agents_router
-    from plugins.web_ui.api.auth import router as auth_router
-    from plugins.web_ui.api.evals import router as evals_router
-    from plugins.web_ui.api.memory import router as memory_router
-    from plugins.web_ui.api.analytics import router as analytics_api_router
-    from plugins.web_ui.api.github import router as github_api_router
-    from plugins.web_ui.api.runtime_config import router as runtime_config_router
-    from plugins.web_ui.api.messaging import router as messaging_router
-    app.include_router(chat_router)
-    app.include_router(mcp_router)
-    app.include_router(rag_router)
-    app.include_router(tools_router)
-    app.include_router(genui_router)
-    app.include_router(agents_router)
-    app.include_router(auth_router)
-    app.include_router(evals_router)
-    app.include_router(memory_router)
-    app.include_router(analytics_api_router)
-    app.include_router(github_api_router)
-    app.include_router(runtime_config_router)
-    app.include_router(messaging_router)
+    from plugins.web_ui.routes import register_api_routers
+
+    register_api_routers(app)
 
     # ── Health check (must be before SPA fallback) ──
 
     @app.get("/health")
     async def health():
+        plugin_health = app.state.plugin_manager.health()
+        degraded = any(item["status"] in {"error", "blocked"} for item in plugin_health.values())
         return {
-            "status": "ok",
+            "status": "degraded" if degraded else "ok",
             "version": APP_VERSION,
             "config_loaded": bool(config),
-            "plugins": app.state.plugin_manager.health(),
+            "plugins": plugin_health,
         }
 
     @app.get("/ready")
@@ -630,6 +784,9 @@ def create_app(config: dict[str, Any]) -> FastAPI:
             "mcp": app.state.mcp_gateway.health()["status"] in ("ok", "degraded"),
             "session_store": hasattr(app.state, "session_store"),
             "agent_engine": hasattr(app.state, "agent_engine"),
+            "plugins": all(
+                item["status"] == "enabled" for item in app.state.plugin_manager.health().values()
+            ),
         }
         return {"status": "ready" if all(checks.values()) else "not_ready", "checks": checks}
 
@@ -747,6 +904,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
     # ── SPA fallback (MUST be the very last route) ──
     from fastapi.responses import Response as _Response
+
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str):
         static_index = Path("plugins/web_ui/static/index.html")

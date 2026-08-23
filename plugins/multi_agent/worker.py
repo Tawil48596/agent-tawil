@@ -3,7 +3,6 @@
 import asyncio
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Optional
 
 
 @dataclass
@@ -11,7 +10,7 @@ class WorkerConfig:
     goal: str
     context: str = ""
     allowed_tools: list[str] = field(default_factory=list)
-    model: Optional[str] = None
+    model: str | None = None
     max_turns: int = 30
     timeout: int = 120
 
@@ -32,11 +31,14 @@ class WorkerAgent:
         """在受限环境中执行任务"""
         # 保存检查点
         if self._blackboard:
-            self._blackboard.write(f"worker:{self._id}:start", {
-                "goal": config.goal,
-                "tools": config.allowed_tools,
-                "timestamp": __import__("time").time(),
-            })
+            self._blackboard.write(
+                f"worker:{self._id}:start",
+                {
+                    "goal": config.goal,
+                    "tools": config.allowed_tools,
+                    "timestamp": __import__("time").time(),
+                },
+            )
 
         if self._engine:
             try:
@@ -53,9 +55,17 @@ class WorkerAgent:
                     self._blackboard.write(f"worker:{self._id}:result", response.text)
 
                 return {"worker_id": self._id, "status": "completed", "result": response.text}
-            except asyncio.TimeoutError:
-                return {"worker_id": self._id, "status": "timeout", "error": f"Timeout after {config.timeout}s"}
+            except TimeoutError:
+                return {
+                    "worker_id": self._id,
+                    "status": "timeout",
+                    "error": f"Timeout after {config.timeout}s",
+                }
             except Exception as e:
                 return {"worker_id": self._id, "status": "failed", "error": str(e)}
 
-        return {"worker_id": self._id, "status": "completed", "result": f"[Simulated] {config.goal}"}
+        return {
+            "worker_id": self._id,
+            "status": "completed",
+            "result": f"[Simulated] {config.goal}",
+        }

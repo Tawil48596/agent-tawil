@@ -1,7 +1,6 @@
 """短期记忆 — 当前会话消息窗口管理"""
 
 from collections import deque
-from typing import Optional
 
 
 class ShortTermMemory:
@@ -10,7 +9,7 @@ class ShortTermMemory:
     def __init__(self, max_messages: int = 50):
         self._max = max_messages
         self._messages: deque[dict] = deque(maxlen=max_messages)
-        self._summary: Optional[str] = None  # 溢出消息的摘要
+        self._summary: str | None = None  # 溢出消息的摘要
 
     def add(self, message: dict) -> None:
         """添加消息。超出窗口的最旧消息自动丢弃。"""

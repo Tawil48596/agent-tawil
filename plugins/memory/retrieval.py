@@ -1,8 +1,5 @@
 """混合检索 — 关键词 + 向量 + 时间衰减"""
 
-import time
-from typing import Optional
-
 
 class MemoryRetrieval:
     """记忆混合检索器"""
@@ -13,23 +10,29 @@ class MemoryRetrieval:
         self._profile = user_profile
         self._decay_lambda = 0.01
 
-    async def retrieve(self, query: str, limit: int = 10,
-                        include_short_term: bool = True,
-                        include_profile: bool = True) -> dict:
+    async def retrieve(
+        self,
+        query: str,
+        limit: int = 10,
+        include_short_term: bool = True,
+        include_profile: bool = True,
+    ) -> dict:
         """混合检索: 短期 + 长期 + 用户画像"""
         result = {"short_term": [], "long_term": [], "profile": {}}
 
         # 短期记忆
         if include_short_term and self._stm:
             stm_msgs = self._stm.get_recent(10)
-            result["short_term"] = [m for m in stm_msgs
-                                     if query.lower() in (m.get("content", "") or "").lower()]
+            result["short_term"] = [
+                m for m in stm_msgs if query.lower() in (m.get("content", "") or "").lower()
+            ]
 
         # 长期记忆
         if self._ltm:
             entries = await self._ltm.search(query, limit)
-            result["long_term"] = [{"content": e.content, "type": e.type,
-                                      "importance": e.importance} for e in entries]
+            result["long_term"] = [
+                {"content": e.content, "type": e.type, "importance": e.importance} for e in entries
+            ]
 
         # 用户画像
         if include_profile and self._profile:
