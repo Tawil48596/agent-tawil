@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from plugins.web_ui.api.auth import AuthenticationMiddleware, router
+from plugins.web_ui.api.auth import APIKeyManager, AuthenticationMiddleware, router
 
 
 def _client() -> TestClient:
@@ -66,3 +66,13 @@ def test_api_key_creation_requires_existing_identity(monkeypatch):
     assert denied.status_code == 401
     assert allowed.status_code == 200
     assert allowed.json()["api_key"].startswith("sk-")
+
+
+def test_api_key_digests_are_keyed_per_manager():
+    """The same credential must not have a reusable, global digest."""
+    first = APIKeyManager()
+    second = APIKeyManager()
+
+    assert first._hash("sk-fixed-regression-value") != second._hash(
+        "sk-fixed-regression-value"
+    )
