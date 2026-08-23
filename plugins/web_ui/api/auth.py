@@ -1,7 +1,6 @@
 """Auth API — API Key + JWT 认证"""
 
 import hashlib
-import hmac
 import os
 import secrets
 import time
@@ -47,7 +46,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
 class APIKeyManager:
     def __init__(self):
-        self._hash_key = secrets.token_bytes(32)
+        self._hash_salt = secrets.token_bytes(16)
         self._keys: dict[str, dict] = {}  # hashed_key → {user_id, name, created_at}
         self._revoked: set[str] = set()
 
@@ -78,7 +77,14 @@ class APIKeyManager:
         self._revoked.add(self._hash(raw_key))
 
     def _hash(self, key: str) -> str:
-        return hmac.digest(self._hash_key, key.encode(), "sha256").hex()
+        return hashlib.scrypt(
+            key.encode(),
+            salt=self._hash_salt,
+            n=2**14,
+            r=8,
+            p=1,
+            dklen=32,
+        ).hex()
 
 
 # ── JWT ──
