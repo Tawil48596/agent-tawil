@@ -3,15 +3,16 @@
 import hashlib
 import os
 import secrets
-import time
 from datetime import UTC, datetime, timedelta
 
+import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+DEVELOPMENT_JWT_SECRET = "dev-secret-change-me-unsafe-local-only"
 
 
 class LoginRequest(BaseModel):
@@ -92,47 +93,28 @@ class APIKeyManager:
 
 class JWTHandler:
     def __init__(self, secret: str = None):
-        self._secret = secret or os.environ.get("JWT_SECRET", "dev-secret-change-me")
+        self._secret = secret or os.environ.get("JWT_SECRET", DEVELOPMENT_JWT_SECRET)
         self._blacklist: set[str] = set()
 
     def create_token(self, user_id: str, expires_hours: int = 720) -> str:
         """签发 JWT"""
-        try:
-            from jose import jwt
-
-            payload = {
-                "sub": user_id,
-                "iat": datetime.now(UTC),
-                "exp": datetime.now(UTC) + timedelta(hours=expires_hours),
-            }
-            return jwt.encode(payload, self._secret, algorithm="HS256")
-        except ImportError:
-            # 回退: 简单签名
-            payload = f"{user_id}:{int(time.time()) + expires_hours * 3600}"
-            sig = hashlib.sha256(f"{payload}:{self._secret}".encode()).hexdigest()[:16]
-            return f"{payload}:{sig}"
+        payload = {
+            "sub": user_id,
+            "iat": datetime.now(UTC),
+            "exp": datetime.now(UTC) + timedelta(hours=expires_hours),
+        }
+        return jwt.encode(payload, self._secret, algorithm="HS256")
 
     def verify(self, token: str) -> str | None:
         """验证 JWT，返回 user_id"""
         if token in self._blacklist:
             return None
         try:
-            from jose import jwt
-
             payload = jwt.decode(token, self._secret, algorithms=["HS256"])
-            return payload.get("sub")
-        except ImportError:
-            parts = token.rsplit(":", 1)
-            if len(parts) != 2:
-                return None
-            payload, sig = parts
-            expected = hashlib.sha256(f"{payload}:{self._secret}".encode()).hexdigest()[:16]
-            if sig != expected:
-                return None
-            user_id, exp_ts = payload.split(":", 1)
-            if int(exp_ts) < time.time():
-                return None
-            return user_id
+        except jwt.PyJWTError:
+            return None
+        subject = payload.get("sub")
+        return str(subject) if subject else None
 
     def revoke(self, token: str):
         self._blacklist.add(token)

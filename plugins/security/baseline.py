@@ -12,7 +12,12 @@ def validate_production_config(config: dict) -> list[str]:
     if not auth.get("enabled", False):
         errors.append("authentication must be enabled in production")
     secret = os.environ.get("JWT_SECRET", auth.get("jwt_secret", ""))
-    if not secret or secret in ("dev-secret-change-me", "${JWT_SECRET}") or len(secret) < 32:
+    development_secrets = {
+        "dev-secret-change-me",
+        "dev-secret-change-me-unsafe-local-only",
+        "${JWT_SECRET}",
+    }
+    if not secret or secret in development_secrets or len(secret) < 32:
         errors.append("JWT_SECRET must contain at least 32 characters")
     admin_password = os.environ.get("AGENT_ADMIN_PASSWORD", "")
     if len(admin_password) < 12:

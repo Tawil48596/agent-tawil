@@ -24,9 +24,6 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.30",
     "aiosqlite>=0.20.0",
 
-    # Vector Store
-    "chromadb>=0.5.0",
-
     # Cache & Queue
     "redis[hiredis]>=5.0.0",
 
@@ -55,7 +52,7 @@ dependencies = [
     "structlog>=24.0.0",
 
     # Auth
-    "python-jose[cryptography]>=3.3.0",
+    "PyJWT>=2.10.0",
     "passlib[bcrypt]>=1.7.4",
 
     # Config

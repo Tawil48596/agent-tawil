@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from plugins.web_ui.api.auth import APIKeyManager, AuthenticationMiddleware, router
+from plugins.web_ui.api.auth import APIKeyManager, AuthenticationMiddleware, JWTHandler, router
 
 
 def _client() -> TestClient:
@@ -75,3 +75,12 @@ def test_api_key_digests_are_keyed_per_manager():
     credential = "sk-" + "fixed-regression-value"
 
     assert first._hash(credential) != second._hash(credential)
+
+
+def test_expired_and_malformed_tokens_are_rejected():
+    handler = JWTHandler("test-secret-that-is-long-enough-for-hs256")
+
+    expired = handler.create_token("alice", expires_hours=-1)
+
+    assert handler.verify(expired) is None
+    assert handler.verify("not-a-jwt") is None
