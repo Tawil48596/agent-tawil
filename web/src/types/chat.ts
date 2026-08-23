@@ -58,6 +58,17 @@ export interface ToolDef {
   genui_component?: string;
 }
 
+export interface ToolApprovalRequest {
+  id: string;
+  session_id: string;
+  tool_name: string;
+  command: string;
+  reason: string;
+  status: "pending";
+  created_at: number;
+  timeout: number;
+}
+
 export interface ModelInfo {
   name: string;
   provider: string;

@@ -1,5 +1,7 @@
 # Release checklist
 
+首选入口：`python -m scripts.run_release_gates`。任一门禁失败或超过预算时返回非零退出码，机器证据默认写入 `data/release/evidence.json`。
+
 1. Confirm `git status` is clean and inspect every committed path.
 2. Run `python -m pytest` and require all tests to pass.
 3. Run `npm ci` when dependencies change, then `npm run build`.

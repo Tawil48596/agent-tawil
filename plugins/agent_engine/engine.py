@@ -34,6 +34,7 @@ class AgentEngine:
         router: ModelRouter,
         agent_config: dict[str, Any],
         tool_dispatcher: Optional[ToolDispatcher] = None,
+        completion_fn: Any = None,
     ):
         self.router = router
         self.max_turns = agent_config.get("max_turns", 50)
@@ -41,6 +42,7 @@ class AgentEngine:
         self.prompt_builder = PromptBuilder()
         self.context_manager = ContextManager()
         self.tool_dispatcher = tool_dispatcher or ToolDispatcher()
+        self._completion_fn = completion_fn
 
     # ── 同步运行 ──
 
@@ -70,7 +72,7 @@ class AgentEngine:
         ))
 
         return await self._inference_loop(
-            messages, route_result, enabled_tools, reasoning_effort
+            messages, route_result, enabled_tools, reasoning_effort, session
         )
 
     # ── 流式运行 ──
@@ -115,7 +117,7 @@ class AgentEngine:
                 completion_kwargs = self._completion_kwargs(
                     route_result, messages, enabled_tools, reasoning_effort
                 )
-                response = await acompletion(
+                response = await (self._completion_fn or acompletion)(
                     stream=True,
                     stream_options={"include_usage": True},
                     **completion_kwargs,
@@ -184,7 +186,9 @@ class AgentEngine:
                     tool_calls_list = list(tool_calls_buffer.values())
                     yield {"type": "tool_calls", "calls": tool_calls_list, "status": "pending"}
 
-                    results = await self.tool_dispatcher.execute_parallel(tool_calls_list)
+                    results = await self.tool_dispatcher.execute_parallel(
+                        tool_calls_list, context=session
+                    )
                     yield {"type": "tool_results", "results": results}
                     assistant_message = {
                         "role": "assistant",
@@ -244,18 +248,20 @@ class AgentEngine:
         route_result: RouteResult,
         enabled_tools: Optional[list[dict]],
         reasoning_effort: Optional[str] = None,
+        session: Optional[dict] = None,
     ) -> EngineResponse:
         """非流式推理循环"""
         turns = 0
         consecutive_failures = 0
         failed_providers: set[str] = set()
+        executed_tool_calls: list[dict[str, Any]] = []
 
         while turns < self.max_turns:
             if self.context_manager.needs_compression(messages, route_result.context_length):
                 messages = await self.context_manager.compress(messages, route_result)
 
             try:
-                response = await acompletion(**self._completion_kwargs(
+                response = await (self._completion_fn or acompletion)(**self._completion_kwargs(
                     route_result, messages, enabled_tools, reasoning_effort
                 ))
             except Exception as e:
@@ -279,6 +285,7 @@ class AgentEngine:
                         stop_reason="tool_error",
                         model_used=route_result.model,
                         provider_used=route_result.provider,
+                        tool_calls=executed_tool_calls,
                     )
                 continue
 
@@ -293,6 +300,7 @@ class AgentEngine:
                     model_used=route_result.model,
                     provider_used=route_result.provider,
                     usage=usage,
+                    tool_calls=executed_tool_calls,
                 )
 
             # 工具调用
@@ -304,7 +312,10 @@ class AgentEngine:
                 }
                 for tc in choice.message.tool_calls
             ]
-            results = await self.tool_dispatcher.execute_parallel(tool_calls_raw)
+            executed_tool_calls.extend(tool_calls_raw)
+            results = await self.tool_dispatcher.execute_parallel(
+                tool_calls_raw, context=session
+            )
 
             assistant_message = {
                 "role": "assistant",
@@ -330,6 +341,7 @@ class AgentEngine:
                         stop_reason="tool_error",
                         model_used=route_result.model,
                         provider_used=route_result.provider,
+                        tool_calls=executed_tool_calls,
                     )
             else:
                 consecutive_failures = 0
@@ -341,6 +353,7 @@ class AgentEngine:
             stop_reason="max_turns",
             model_used=route_result.model,
             provider_used=route_result.provider,
+            tool_calls=executed_tool_calls,
         )
 
     async def _build_initial_messages(

@@ -1,7 +1,7 @@
 ﻿@echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-title AI Agent Platform 1.0.0
+title AI Agent Platform 2.0.0
 
 set "VENV_DIR=%CD%\.venv"
 set "PYTHON_EXE=%VENV_DIR%\Scripts\python.exe"

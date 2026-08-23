@@ -14,6 +14,9 @@ def validate_production_config(config: dict) -> list[str]:
     secret = os.environ.get("JWT_SECRET", auth.get("jwt_secret", ""))
     if not secret or secret in ("dev-secret-change-me", "${JWT_SECRET}") or len(secret) < 32:
         errors.append("JWT_SECRET must contain at least 32 characters")
+    admin_password = os.environ.get("AGENT_ADMIN_PASSWORD", "")
+    if len(admin_password) < 12:
+        errors.append("AGENT_ADMIN_PASSWORD must contain at least 12 characters")
     origins = server.get("cors_origins", [])
     if not origins or "*" in origins:
         errors.append("explicit CORS origins are required in production")

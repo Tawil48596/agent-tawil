@@ -21,11 +21,34 @@ from typing import Any
 import structlog
 import uvicorn
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from yaml.resolver import BaseResolver
 from shared.version import APP_VERSION
 
 # ── Config loading ──
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects silently overwritten mapping keys."""
+
+
+def _construct_unique_mapping(loader: _UniqueKeyLoader, node: yaml.MappingNode, deep=False):
+    mapping = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping",
+                node.start_mark,
+                f"duplicate key: {key}",
+                key_node.start_mark,
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping)
 
 
 def load_config(config_path: str = "config.yaml") -> dict[str, Any]:
@@ -45,7 +68,7 @@ def load_config(config_path: str = "config.yaml") -> dict[str, Any]:
         return os.environ.get(var_name, match.group(0))
 
     raw = re.sub(r"\$\{(\w+)\}", _env_replacer, raw)
-    return yaml.safe_load(raw) or {}
+    return yaml.load(raw, Loader=_UniqueKeyLoader) or {}
 
 
 # ── Logging setup ──
@@ -122,9 +145,18 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         from plugins.agent_engine.model_router import ModelRouter
         from plugins.agent_engine.engine import AgentEngine
         from plugins.agent_engine.tool_dispatch import ToolDispatcher
+        from plugins.checkpoint.execution_ledger import ToolExecutionLedger
 
         router = ModelRouter(config)
         tool_dispatcher = ToolDispatcher()
+        ledger_path = config.get("checkpoint", {}).get(
+            "execution_ledger_path", "data/tool_executions"
+        )
+        execution_ledger = ToolExecutionLedger(
+            ledger_path,
+            lease_seconds=config.get("checkpoint", {}).get("tool_lease_seconds", 60),
+        )
+        tool_dispatcher.set_execution_ledger(execution_ledger)
         engine = AgentEngine(router, config.get("agent", {}), tool_dispatcher)
 
         async def _echo(text: str) -> str:
@@ -137,6 +169,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
 
         app.state.model_router = router
         app.state.tool_dispatcher = tool_dispatcher
+        app.state.execution_ledger = execution_ledger
         app.state.agent_engine = engine
 
         available = router.list_available_models()
@@ -149,11 +182,31 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         from plugins.security.execution_guard import ExecutionGuard
         from plugins.security.output_guard import OutputGuard
         from plugins.security.tool_approval import ToolApproval
+        from plugins.observability.audit import AuditLog
 
         app.state.content_filter = ContentFilter()
         app.state.execution_guard = ExecutionGuard(config.get("security", {}))
         app.state.output_guard = OutputGuard()
-        app.state.tool_approval = ToolApproval(config.get("security", {}))
+        tool_approval = ToolApproval(config.get("security", {}))
+        app.state.tool_approval = tool_approval
+        audit_log = AuditLog(config.get("security", {}).get("audit_log", {}))
+        app.state.audit_log = audit_log
+        def _record_tool_event(event_type: str, **fields) -> None:
+            audit_log.record(event_type, **fields)
+            metrics_collector.record_tool_event(event_type, **fields)
+
+        tool_dispatcher.set_audit_handler(_record_tool_event)
+
+        async def _request_tool_approval(name: str, arguments: dict, context: dict) -> bool:
+            approval = await tool_approval.request_approval(
+                session_id=str(context.get("id", "unknown")),
+                tool_name=name,
+                command=json.dumps(arguments, ensure_ascii=False, default=str),
+                reason="Model requested a protected tool",
+            )
+            return approval.status.value == "approved"
+
+        tool_dispatcher.set_approval_handler(_request_tool_approval)
 
         logger.info("Security: L1+L2+L3 filters ready")
 
@@ -363,9 +416,16 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         ))
 
         # 同步 tool_dispatcher
+        approval_required = set(
+            config.get("tool_market", {}).get("approval_required_for", [])
+        )
         for tool in tool_registry.list_installed():
             if tool.handler:
-                tool_dispatcher.register(tool.name, tool.handler)
+                tool_dispatcher.register(
+                    tool.name,
+                    tool.handler,
+                    requires_approval=(tool.is_dangerous or tool.name in approval_required),
+                )
 
         logger.info("Tool market ready", builtin=len(tool_registry.list_installed()),
                      market=marketplace.get_stats()["market_size"])
@@ -433,8 +493,18 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         from plugins.messaging.platforms.telegram import TelegramAdapter
         from plugins.messaging.gateway import MessagingGateway
 
-        eval_runner = EvalRunner()
-        trace_collector = TraceCollector()
+        eval_cfg = config.get("evals", {})
+        eval_runner = EvalRunner(
+            suites_dir=eval_cfg.get("suites_dir", "plugins/evals/test_suites"),
+            history_path=eval_cfg.get("history_path", "data/evals/history.json"),
+            max_pass_rate_regression=eval_cfg.get("max_pass_rate_regression", 0.0),
+            history_limit=eval_cfg.get("history_limit", 100),
+        )
+        trace_cfg = config.get("observability", {}).get("traces", {})
+        trace_collector = TraceCollector(
+            max_traces=trace_cfg.get("max_traces", 1000),
+            storage_path=trace_cfg.get("path", "data/traces/history.json"),
+        )
         telegram_bot = TelegramAdapter()
         messaging_gateway = MessagingGateway(
             config.get("messaging", {}),
@@ -478,6 +548,11 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         description="通用 AI Agent 平台 — 多智能体协作、MCP 网关、RAG 检索增强",
         lifespan=lifespan,
     )
+
+    if config.get("auth", {}).get("enabled", False):
+        from plugins.web_ui.api.auth import AuthenticationMiddleware
+
+        app.add_middleware(AuthenticationMiddleware)
 
     from plugins.observability.http_middleware import ObservabilityMiddleware
     from plugins.observability.metrics import MetricsCollector
@@ -625,6 +700,49 @@ def create_app(config: dict[str, Any]) -> FastAPI:
             "text": result.text[:500],  # 返回前 500 字符
             "redactions": result.redactions,
             "blocked": result.blocked,
+        }
+
+    @app.get("/api/v1/security/tool-approvals")
+    async def list_tool_approvals(session_id: str = ""):
+        """Return pending protected-tool requests for the approval UI."""
+        return {
+            "items": [
+                {
+                    "id": item.id,
+                    "session_id": item.session_id,
+                    "tool_name": item.tool_name,
+                    "command": item.command,
+                    "reason": item.reason,
+                    "status": item.status.value,
+                    "created_at": item.created_at,
+                    "timeout": item.timeout,
+                }
+                for item in app.state.tool_approval.get_pending(session_id)
+            ]
+        }
+
+    @app.post("/api/v1/security/tool-approvals/{request_id}")
+    async def decide_tool_approval(request_id: str, body: dict, request: Request):
+        """Approve or deny one pending protected-tool request."""
+        decision = body.get("decision")
+        if decision not in {"approve", "deny"}:
+            raise HTTPException(422, "decision must be 'approve' or 'deny'")
+        handled = (
+            app.state.tool_approval.approve(request_id)
+            if decision == "approve"
+            else app.state.tool_approval.deny(request_id)
+        )
+        if not handled:
+            raise HTTPException(404, "Pending approval not found")
+        app.state.audit_log.record(
+            "approval.approved" if decision == "approve" else "approval.denied",
+            request_id=request_id,
+            trace_id=getattr(request.state, "trace_id", ""),
+            user_id=getattr(request.state, "user_id", "anonymous"),
+        )
+        return {
+            "ok": True,
+            "status": "approved" if decision == "approve" else "denied",
         }
 
     # ── SPA fallback (MUST be the very last route) ──

@@ -26,6 +26,9 @@ async def extract_rendered_page(url: str, max_chars: int = 20000) -> dict:
     """Render a page with Chromium and return its visible body text."""
     from playwright.async_api import async_playwright
 
+    from plugins.security.network_policy import require_public_http_url
+
+    await require_public_http_url(url)
     async with async_playwright() as p:
         browser = await _launch_browser(p)
         try:
@@ -36,6 +39,22 @@ async def extract_rendered_page(url: str, max_chars: int = 20000) -> dict:
                     "Chrome/126.0.0.0 Safari/537.36"
                 )
             )
+
+            approved_hosts = set()
+
+            async def guard_request(route):
+                from urllib.parse import urlparse
+
+                hostname = urlparse(route.request.url).hostname
+                try:
+                    if hostname not in approved_hosts:
+                        await require_public_http_url(route.request.url)
+                        approved_hosts.add(hostname)
+                    await route.continue_()
+                except (OSError, ValueError):
+                    await route.abort("blockedbyclient")
+
+            await page.route("**/*", guard_request)
             response = await page.goto(url, wait_until="domcontentloaded", timeout=12000)
             await page.wait_for_timeout(500)
             title = await page.title()
@@ -78,8 +97,9 @@ async def browser_navigate(url: str, max_chars: int = 20000) -> str:
 async def browser_screenshot(url: str, selector: str = "body") -> str:
     """浏览器截图（返回 base64）"""
     try:
-        from playwright.async_api import async_playwright
         import base64
+
+        from playwright.async_api import async_playwright
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)

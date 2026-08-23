@@ -2,19 +2,51 @@
 
 import hashlib
 import os
+import secrets
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AuthenticationMiddleware(BaseHTTPMiddleware):
+    """Require authentication for v1 APIs when enabled by the app factory."""
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if (
+            request.method == "OPTIONS"
+            or not path.startswith("/api/v1/")
+            or path == "/api/v1/auth/token"
+        ):
+            return await call_next(request)
+
+        user_id = authenticate_headers(
+            request.headers.get("Authorization"),
+            request.headers.get("X-API-Key"),
+        )
+        if user_id is None:
+            return JSONResponse({"detail": "Missing or invalid authentication"}, status_code=401)
+        request.state.user_id = user_id
+        return await call_next(request)
 
 
 # ── API Key 管理 ──
 
 class APIKeyManager:
     def __init__(self):
+        self._hash_salt = secrets.token_bytes(16)
         self._keys: dict[str, dict] = {}  # hashed_key → {user_id, name, created_at}
         self._revoked: set[str] = set()
 
@@ -44,9 +76,15 @@ class APIKeyManager:
     def revoke(self, raw_key: str):
         self._revoked.add(self._hash(raw_key))
 
-    @staticmethod
-    def _hash(key: str) -> str:
-        return hashlib.sha256(key.encode()).hexdigest()
+    def _hash(self, key: str) -> str:
+        return hashlib.scrypt(
+            key.encode(),
+            salt=self._hash_salt,
+            n=2**14,
+            r=8,
+            p=1,
+            dklen=32,
+        ).hex()
 
 
 # ── JWT ──
@@ -62,8 +100,8 @@ class JWTHandler:
             from jose import jwt
             payload = {
                 "sub": user_id,
-                "iat": datetime.utcnow(),
-                "exp": datetime.utcnow() + timedelta(hours=expires_hours),
+                "iat": datetime.now(UTC),
+                "exp": datetime.now(UTC) + timedelta(hours=expires_hours),
             }
             return jwt.encode(payload, self._secret, algorithm="HS256")
         except ImportError:
@@ -103,6 +141,18 @@ api_keys = APIKeyManager()
 jwt_handler = JWTHandler()
 
 
+def authenticate_headers(authorization: str = "", x_api_key: str = "") -> Optional[str]:
+    authorization = authorization or ""
+    x_api_key = x_api_key or ""
+    if authorization.startswith("Bearer "):
+        user_id = jwt_handler.verify(authorization[7:])
+        if user_id:
+            return user_id
+    if x_api_key:
+        return api_keys.validate(x_api_key)
+    return None
+
+
 # ── 依赖注入 ──
 
 async def get_current_user(
@@ -111,18 +161,12 @@ async def get_current_user(
     x_api_key: str = Header(None, alias="X-API-Key"),
 ) -> str:
     """从请求中提取并验证用户身份"""
-    # 尝试 Bearer Token (JWT)
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization[7:]
-        user_id = jwt_handler.verify(token)
-        if user_id:
-            return user_id
-
-    # 尝试 API Key
-    if x_api_key:
-        user_id = api_keys.validate(x_api_key)
-        if user_id:
-            return user_id
+    state_user = getattr(request.state, "user_id", None)
+    if state_user:
+        return state_user
+    user_id = authenticate_headers(authorization or "", x_api_key or "")
+    if user_id:
+        return user_id
 
     raise HTTPException(401, "Missing or invalid authentication")
 
@@ -130,17 +174,25 @@ async def get_current_user(
 # ── API ──
 
 @router.post("/api-key")
-async def create_api_key(request: Request, name: str = ""):
+async def create_api_key(name: str = "", user_id: str = Depends(get_current_user)):
     """生成 API Key (需要已有认证)"""
-    # In dev: allow
-    key = api_keys.create_key("default_user", name)
+    key = api_keys.create_key(user_id, name)
     return {"api_key": key, "name": name, "note": "Store this securely. It won't be shown again."}
 
 
 @router.post("/token")
-async def login(username: str = "admin", password: str = ""):
-    """获取 JWT Token (简化版)"""
-    token = jwt_handler.create_token(username)
+async def login(body: LoginRequest):
+    """Issue a JWT after validating the configured local administrator."""
+    expected_username = os.environ.get("AGENT_ADMIN_USERNAME", "admin")
+    expected_password = os.environ.get("AGENT_ADMIN_PASSWORD", "")
+    if not expected_password:
+        raise HTTPException(503, "Administrator credentials are not configured")
+    if not (
+        secrets.compare_digest(body.username, expected_username)
+        and secrets.compare_digest(body.password, expected_password)
+    ):
+        raise HTTPException(401, "Invalid username or password")
+    token = jwt_handler.create_token(body.username)
     return {"access_token": token, "token_type": "bearer"}
 
 
@@ -148,7 +200,11 @@ async def login(username: str = "admin", password: str = ""):
 async def verify_token(request: Request):
     """验证当前 Token"""
     try:
-        user = await get_current_user(request, request.headers.get("Authorization"))
+        user = await get_current_user(
+            request,
+            request.headers.get("Authorization"),
+            request.headers.get("X-API-Key"),
+        )
         return {"valid": True, "user": user}
     except HTTPException:
         return {"valid": False}

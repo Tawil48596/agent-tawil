@@ -41,24 +41,31 @@ class CheckpointStore:
 
     async def save(self, checkpoint: Checkpoint) -> str:
         """保存检查点"""
-        self._latest[checkpoint.task_id] = checkpoint
-
         if self._backend == "file":
-            return self._save_to_file(checkpoint)
+            checkpoint_id = self._save_to_file(checkpoint)
         elif self._backend == "redis" and self._redis:
-            return await self._save_to_redis(checkpoint)
-        return checkpoint.id
+            checkpoint_id = await self._save_to_redis(checkpoint)
+        else:
+            checkpoint_id = checkpoint.id
+        self._latest[checkpoint.task_id] = checkpoint
+        return checkpoint_id
 
     def _save_to_file(self, cp: Checkpoint) -> str:
         task_dir = self._dir / cp.task_id
         task_dir.mkdir(parents=True, exist_ok=True)
         path = task_dir / f"{cp.id}.json"
-        path.write_text(json.dumps({
+        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        payload = json.dumps({
             "id": cp.id, "task_id": cp.task_id, "agent_id": cp.agent_id,
             "stage": cp.stage, "state": cp.state,
             "blackboard_snapshot": cp.blackboard_snapshot,
             "created_at": cp.created_at, "metadata": cp.metadata,
-        }, ensure_ascii=False, default=str))
+        }, ensure_ascii=False, default=str)
+        try:
+            temporary.write_text(payload, encoding="utf-8")
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
         logger.debug("Checkpoint saved", id=cp.id, task=cp.task_id, stage=cp.stage)
         return cp.id
 
@@ -90,15 +97,21 @@ class CheckpointStore:
         if not files:
             return None
 
-        data = json.loads(files[0].read_text())
-        cp = Checkpoint(
-            id=data["id"], task_id=data["task_id"], agent_id=data["agent_id"],
-            stage=data["stage"], state=data["state"],
-            blackboard_snapshot=data.get("blackboard_snapshot", {}),
-            created_at=data["created_at"], metadata=data.get("metadata", {}),
-        )
-        self._latest[task_id] = cp
-        return cp
+        for path in files:
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                cp = Checkpoint(
+                    id=data["id"], task_id=data["task_id"], agent_id=data["agent_id"],
+                    stage=data["stage"], state=data["state"],
+                    blackboard_snapshot=data.get("blackboard_snapshot", {}),
+                    created_at=data["created_at"], metadata=data.get("metadata", {}),
+                )
+            except (OSError, json.JSONDecodeError, KeyError, TypeError):
+                logger.warning("Skipping corrupt checkpoint", path=str(path))
+                continue
+            self._latest[task_id] = cp
+            return cp
+        return None
 
     # ── 查询 ──
 

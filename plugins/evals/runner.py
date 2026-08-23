@@ -1,14 +1,21 @@
 """评测运行器 — CLI + API + CI 集成"""
 
 import json
-import os
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 import structlog
 import yaml
+
+from plugins.evals.metrics import MetricsCalculator
+from shared.versioned_store import (
+    UnsupportedSchemaVersion,
+    load_collection,
+    write_collection,
+)
 
 logger = structlog.get_logger()
 
@@ -17,15 +24,42 @@ logger = structlog.get_logger()
 class TestSuite:
     name: str
     description: str = ""
+    version: int = 1
     cases: list[dict] = field(default_factory=list)
 
 
 class EvalRunner:
     """评测运行器"""
 
-    def __init__(self, suites_dir: str = "plugins/evals/test_suites"):
+    def __init__(
+        self,
+        suites_dir: str = "plugins/evals/test_suites",
+        history_path: str | None = None,
+        max_pass_rate_regression: float = 0.0,
+        history_limit: int = 100,
+    ):
         self._suites_dir = Path(suites_dir)
-        self._history: list[dict] = []
+        self._history_path = Path(history_path) if history_path else None
+        self._max_regression = max(0.0, float(max_pass_rate_regression))
+        self._history_limit = max(1, int(history_limit))
+        self._history = self._load_history()
+
+    def _load_history(self) -> list[dict]:
+        if self._history_path is None or not self._history_path.exists():
+            return []
+        try:
+            payload = load_collection(self._history_path)
+        except UnsupportedSchemaVersion:
+            raise
+        except (OSError, ValueError, json.JSONDecodeError):
+            logger.warning("Ignoring corrupt eval history", path=str(self._history_path))
+            return []
+        return payload[-self._history_limit:]
+
+    def _persist_history(self) -> None:
+        if self._history_path is None:
+            return
+        write_collection(self._history_path, self._history)
 
     def load_suite(self, name: str) -> Optional[TestSuite]:
         """从 YAML 文件加载测试集"""
@@ -39,6 +73,7 @@ class EvalRunner:
         return TestSuite(
             name=data.get("name", name),
             description=data.get("description", ""),
+            version=int(data.get("version", 1)),
             cases=data.get("cases", []),
         )
 
@@ -66,50 +101,114 @@ class EvalRunner:
 
                 # 简单断言
                 expected = case_data.get("expected", {})
-                text = output if isinstance(output, str) else str(output)
+                structured = output if isinstance(output, dict) else {"text": str(output)}
+                text = str(structured.get("text", ""))
+                actual_tools = list(structured.get("tools", []))
+                actual_arguments = structured.get("tool_arguments", {}) or {}
+                usage = structured.get("usage", {}) or {}
 
                 kw = expected.get("keywords", [])
                 kw_matched = [k for k in kw if k.lower() in text.lower()]
-                passed = len(kw_matched) >= len(kw) * 0.5 if kw else True
+                keyword_score = len(kw_matched) / len(kw) if kw else 1.0
+                expected_tools = list(expected.get("tools", []))
+                tool_accuracy = (
+                    len(set(actual_tools) & set(expected_tools))
+                    / len(set(actual_tools) | set(expected_tools))
+                    if actual_tools or expected_tools else 1.0
+                )
+                expected_arguments = expected.get("tool_arguments", {}) or {}
+                argument_matches = sum(
+                    1
+                    for tool, values in expected_arguments.items()
+                    if isinstance(actual_arguments.get(tool), dict)
+                    and all(actual_arguments[tool].get(key) == value for key, value in values.items())
+                )
+                argument_accuracy = (
+                    argument_matches / len(expected_arguments) if expected_arguments else 1.0
+                )
+                total_tokens = int(usage.get("total_tokens", 0) or 0)
+                latency_ms = round(case_time * 1000)
+                latency_ok = latency_ms <= int(expected.get("max_latency_ms", 2**31))
+                tokens_ok = total_tokens <= int(expected.get("max_total_tokens", 2**31))
+                budget_passed = latency_ok and tokens_ok
+                passed = (
+                    keyword_score >= 0.5
+                    and tool_accuracy == 1.0
+                    and argument_accuracy == 1.0
+                    and budget_passed
+                )
 
                 results.append({
                     "case": case_data.get("id", ""),
                     "passed": passed,
-                    "latency_ms": round(case_time * 1000),
+                    "latency_ms": latency_ms,
                     "keywords_matched": kw_matched,
                     "keywords_expected": kw,
+                    "tools_actual": actual_tools,
+                    "tools_expected": expected_tools,
+                    "tool_accuracy": round(tool_accuracy, 3),
+                    "argument_accuracy": round(argument_accuracy, 3),
+                    "budget_passed": budget_passed,
+                    "score": round((keyword_score + tool_accuracy + argument_accuracy) / 3, 3),
+                    "total_tokens": total_tokens,
                 })
             except Exception as e:
                 results.append({
                     "case": case_data.get("id", ""),
                     "passed": False,
-                    "error": str(e),
+                    "error_type": type(e).__name__,
                 })
 
         elapsed = time.time() - start
         passed = sum(1 for r in results if r["passed"])
         report = {
+            "run_id": uuid.uuid4().hex,
+            "created_at": time.time(),
             "suite": suite_name,
+            "suite_version": suite.version,
             "total": len(results),
             "passed": passed,
             "pass_rate": passed / max(len(results), 1),
             "elapsed_s": round(elapsed, 1),
             "results": results,
         }
+        report["metrics"] = MetricsCalculator().calculate(results).to_dict()
+
+        baseline = next(
+            (item for item in reversed(self._history) if item.get("suite") == suite_name),
+            None,
+        )
+        delta = report["pass_rate"] - baseline["pass_rate"] if baseline else 0.0
+        report["regression"] = {
+            "baseline_found": baseline is not None,
+            "baseline_run_id": baseline.get("run_id") if baseline else None,
+            "pass_rate_delta": round(delta, 3),
+            "max_allowed_regression": self._max_regression,
+            "gate_passed": baseline is None or delta >= -self._max_regression,
+        }
 
         self._history.append(report)
+        self._history = self._history[-self._history_limit:]
+        self._persist_history()
         logger.info("Eval complete", suite=suite_name, pass_rate=report["pass_rate"])
         return report
 
-    def get_history(self) -> list[dict]:
-        return self._history
+    def get_history(self, suite: str | None = None, limit: int | None = None) -> list[dict]:
+        history = [item for item in self._history if not suite or item.get("suite") == suite]
+        return history[-limit:] if limit is not None else history
 
-    def compare_last(self, agent_fn: Callable) -> Optional[dict]:
+    def compare_last(self, agent_fn: Callable | None = None) -> Optional[dict]:
         """对比最近两次运行"""
-        if len(self._history) < 2:
+        if not self._history:
             return None
-        old = self._history[-2]
         new = self._history[-1]
+        old = next(
+            (item for item in reversed(self._history[:-1])
+             if item.get("suite") == new.get("suite")),
+            None,
+        )
+        if old is None:
+            return None
         return {
             "baseline_pass_rate": old["pass_rate"],
             "new_pass_rate": new["pass_rate"],

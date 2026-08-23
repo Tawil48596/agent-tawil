@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import type { Session, Message, ModelInfo, ToolDef, TokenUsage } from "@/types/chat";
+import type {
+  Session, Message, ModelInfo, ToolDef, TokenUsage, ToolApprovalRequest,
+} from "@/types/chat";
 import { api } from "@/lib/api";
 
 let activeRequest: AbortController | null = null;
@@ -12,6 +14,8 @@ interface ChatState {
   task: string;
   reasoningEffort: string;
   toolsEnabled: boolean;
+  dangerousToolsEnabled: string[];
+  pendingApprovals: ToolApprovalRequest[];
   models: ModelInfo[];
   tools: ToolDef[];
   streaming: boolean;
@@ -34,6 +38,9 @@ interface ChatState {
   setTask: (t: string) => void;
   setReasoningEffort: (effort: string) => void;
   setToolsEnabled: (enabled: boolean) => void;
+  toggleDangerousTool: (name: string) => void;
+  loadApprovals: () => Promise<void>;
+  decideApproval: (id: string, decision: "approve" | "deny") => Promise<void>;
   clearError: () => void;
 }
 
@@ -45,6 +52,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   task: "reasoning",
   reasoningEffort: typeof window !== "undefined" ? localStorage.getItem("ai-agent-reasoning-effort") || "auto" : "auto",
   toolsEnabled: typeof window !== "undefined" ? localStorage.getItem("ai-agent-tools-enabled") !== "false" : true,
+  dangerousToolsEnabled: [],
+  pendingApprovals: [],
   models: [],
   tools: [],
   streaming: false,
@@ -85,7 +94,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   selectSession: async (id) => {
-    set({ activeId: id, error: null });
+    set({ activeId: id, error: null, pendingApprovals: [] });
     try {
       const data = await api.getMessages(id);
       const assistantMessages = (data.items || []).filter((message: Message) => message.role === "assistant");
@@ -157,9 +166,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     let fullText = "";
     try {
-      const { model, task, reasoningEffort, toolsEnabled, tools } = get();
+      const { model, task, reasoningEffort, toolsEnabled, tools, dangerousToolsEnabled } = get();
       const enabledToolNames = toolsEnabled
-        ? tools.filter((tool) => !tool.is_dangerous).map((tool) => tool.name)
+        ? tools
+            .filter((tool) => !tool.is_dangerous || dangerousToolsEnabled.includes(tool.name))
+            .map((tool) => tool.name)
         : [];
       const resp = await api.sendMessage(
         sid, text, model || undefined, task, reasoningEffort, enabledToolNames,
@@ -271,6 +282,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setToolsEnabled: (enabled) => {
     localStorage.setItem("ai-agent-tools-enabled", String(enabled));
     set({ toolsEnabled: enabled });
+  },
+  toggleDangerousTool: (name) => set((state) => ({
+    dangerousToolsEnabled: state.dangerousToolsEnabled.includes(name)
+      ? state.dangerousToolsEnabled.filter((toolName) => toolName !== name)
+      : [...state.dangerousToolsEnabled, name],
+  })),
+  loadApprovals: async () => {
+    const sessionId = get().activeId;
+    if (!sessionId) return;
+    try {
+      const data = await api.listToolApprovals(sessionId);
+      set({ pendingApprovals: data.items || [] });
+    } catch {
+      // The chat request owns connection errors; approval polling is best effort.
+    }
+  },
+  decideApproval: async (id, decision) => {
+    await api.decideToolApproval(id, decision);
+    set((state) => ({
+      pendingApprovals: state.pendingApprovals.filter((item) => item.id !== id),
+    }));
   },
   clearError: () => set({ error: null }),
 }));

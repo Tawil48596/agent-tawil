@@ -36,8 +36,8 @@ class EventBus:
         handlers = self._subscribers.get(event.type, []) + self._subscribers.get("*", [])
         for handler in handlers:
             try:
-                import asyncio
-                if asyncio.iscoroutinefunction(handler):
+                import inspect
+                if inspect.iscoroutinefunction(handler):
                     await handler(event)
                 else:
                     handler(event)

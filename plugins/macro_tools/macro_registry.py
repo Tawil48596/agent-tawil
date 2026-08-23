@@ -1,6 +1,7 @@
 """宏工具注册与执行 — 批量依赖调用打包 + 自动发现"""
 
 import asyncio
+import inspect
 from collections import defaultdict
 from typing import Any, Callable, Optional
 
@@ -62,7 +63,7 @@ class MacroRegistry:
         start = time.time()
 
         try:
-            if asyncio.iscoroutinefunction(macro.executor):
+            if inspect.iscoroutinefunction(macro.executor):
                 result = await macro.executor(**kwargs)
             else:
                 result = macro.executor(**kwargs)
