@@ -31,6 +31,7 @@ class ToolDispatcher:
         self._approval_required: set[str] = set()
         self._approval_handler = approval_handler
         self._audit_handler: Callable[..., Any] | None = None
+        self._execution_handler: Callable[[str], Any] | None = None
         self._execution_ledger: Any | None = None
         self._timeout = timeout
 
@@ -52,6 +53,10 @@ class ToolDispatcher:
     def set_audit_handler(self, handler: Callable[..., Any] | None) -> None:
         self._audit_handler = handler
 
+    def set_execution_handler(self, handler: Callable[[str], Any] | None) -> None:
+        """Observe real handler executions without coupling the dispatcher to a registry."""
+        self._execution_handler = handler
+
     def set_execution_ledger(self, ledger: Any | None) -> None:
         """Bind durable storage for completed tool-call results."""
         self._execution_ledger = ledger
@@ -63,6 +68,14 @@ class ToolDispatcher:
             self._audit_handler(event_type, **fields)
         except Exception:
             logger.warning("Audit handler failed", event_type=event_type)
+
+    def _record_execution(self, name: str) -> None:
+        if self._execution_handler is None:
+            return
+        try:
+            self._execution_handler(name)
+        except Exception:
+            logger.warning("Execution handler failed", tool=name)
 
     def unregister(self, name: str):
         """注销工具"""
@@ -191,6 +204,7 @@ class ToolDispatcher:
             attempt_id = decision["attempt_id"]
 
         started = time.monotonic()
+        self._record_execution(name)
         self._audit("tool.started", tool=name, arguments=args, context=context or {})
         try:
             output = await asyncio.wait_for(

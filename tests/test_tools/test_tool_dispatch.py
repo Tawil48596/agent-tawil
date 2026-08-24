@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from plugins.agent_engine.tool_dispatch import ToolDispatcher
 from plugins.checkpoint.execution_ledger import ToolExecutionLedger
+from plugins.tool_market.registry import ToolDef, ToolRegistry
 from plugins.web_ui.api.tools import ExecutionResolveRequest, resolve_uncertain_execution
 
 
@@ -42,6 +43,22 @@ async def test_dict_tool_error_is_serialized_and_reported_as_failure():
 
     assert result[0]["error"] is True
     assert json.loads(result[0]["output"]) == {"error": "permission denied"}
+
+
+@pytest.mark.asyncio
+async def test_real_execution_updates_tool_registry_stats():
+    registry = ToolRegistry()
+    tool = ToolDef(name="counted", description="count executions", handler=lambda: "ok")
+    registry.register(tool)
+
+    dispatcher = ToolDispatcher()
+    dispatcher.set_execution_handler(registry.record_call)
+    dispatcher.register(tool.name, tool.handler)
+
+    result = await dispatcher.execute_parallel([_call(tool.name, "{}")])
+
+    assert result[0]["error"] is False
+    assert registry.get_stats()["total_calls"] == 1
 
 
 @pytest.mark.asyncio

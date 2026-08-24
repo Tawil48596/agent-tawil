@@ -145,6 +145,14 @@ class ToolRegistry:
             "total_calls": sum(t.call_count for t in self._tools.values()),
         }
 
+    def record_call(self, name: str) -> bool:
+        """Record one real execution attempt for a registered tool."""
+        tool = self._tools.get(name)
+        if tool is None:
+            return False
+        tool.call_count += 1
+        return True
+
     # ── 依赖检查 ──
 
     def check_dependencies(self, tool: ToolDef) -> dict:

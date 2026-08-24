@@ -362,6 +362,7 @@ def create_app(config: dict[str, Any]) -> FastAPI:
         app.state.marketplace = marketplace
         app.state.tool_package_store = package_store
         app.state.schema_mapper = schema_mapper
+        tool_dispatcher.set_execution_handler(tool_registry.record_call)
 
         # 注册内置工具
         from plugins.tool_market.builtin.browser import browser_navigate, browser_screenshot
