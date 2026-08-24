@@ -80,10 +80,10 @@ export function MultiAgentView() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {plans.map((p) => {
           const pct = Math.round((p.progress || 0) * 100);
-          const color = p.status === "completed" ? "#4ade80" : p.status === "running" ? "#6c8cff" : "#fbbf24";
+          const color = p.status === "completed" ? "#4ade80" : p.status === "running" ? "#d4d4d8" : "#fbbf24";
           return (
             <div key={p.id}
-              className="rounded-xl border border-[#2a2d3a] bg-[#1a1d27] p-4 transition-colors hover:border-[#6c8cff]">
+              className="rounded-xl border border-[#303030] bg-[#171717] p-4 transition-colors hover:border-white/25 hover:bg-[#1b1b1b]">
               <button type="button" onClick={() => void loadPlanDetail(p.id)} className="w-full text-left">
                 <span className="flex items-start justify-between">
                   <span>
@@ -99,7 +99,7 @@ export function MultiAgentView() {
               <div className="flex gap-2 mt-3">
                 {p.status !== "running" && p.status !== "completed" && (
                   <button type="button" onClick={() => void executePlan(p.id)}
-                    className="text-xs bg-[#6c8cff] text-white px-3 py-1 rounded flex items-center gap-1"><Play size={12} /> 执行</button>
+                    className="flex items-center gap-1 rounded bg-[#f4f4f5] px-3 py-1 text-xs text-[#171717] hover:bg-white"><Play size={12} /> 执行</button>
                 )}
                 {p.status === "running" && (
                   <button type="button" onClick={() => void cancelPlan(p.id)}
@@ -124,7 +124,7 @@ export function MultiAgentView() {
             {(activePlan.tasks || []).map((t: any) => (
               <div key={t.id} className="flex items-center gap-3 text-sm bg-[#0f1117] rounded-lg p-3">
                 <span className={`w-2 h-2 rounded-full ${
-                  t.status === "completed" ? "bg-[#4ade80]" : t.status === "running" ? "bg-[#6c8cff] animate-pulse" :
+                  t.status === "completed" ? "bg-[#4ade80]" : t.status === "running" ? "bg-[#d4d4d8] animate-pulse" :
                   t.status === "failed" ? "bg-[#f87171]" : "bg-[#8b8fa3]"
                 }`} />
                 <span className="flex-1">{t.goal?.slice(0, 80)}</span>

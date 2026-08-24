@@ -34,7 +34,7 @@ export function SessionsPage() {
 
       <div className="space-y-2 max-w-4xl">
         {sessions.map((session) => (
-          <div key={session.id} className="group flex items-center gap-2 rounded-xl border border-[#2a2d3a] bg-[#1a1d27] p-2 transition hover:border-[#6c8cff]">
+          <div key={session.id} className="group flex items-center gap-2 rounded-xl border border-[#303030] bg-[#171717] p-2 transition hover:border-white/25 hover:bg-[#1b1b1b]">
             <button type="button" onClick={() => { void selectSession(session.id); navigate(`/chat/${session.id}`); }} className="min-w-0 flex-1 p-2 text-left">
               <span className="block truncate text-sm font-medium">
                 {session.title || "新对话"}

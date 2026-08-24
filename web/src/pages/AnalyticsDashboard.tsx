@@ -5,7 +5,7 @@ export function AnalyticsDashboard() {
   const [stats, setStats] = useState<any>({});
   const [models, setModels] = useState<any[]>([]);
   const [error, setError] = useState("");
-  const COLORS = ["#6c8cff","#4ade80","#fbbf24","#f87171","#c084fc","#fb923c","#22d3ee","#a78bfa"];
+  const COLORS = ["#d4d4d8","#4ade80","#fbbf24","#f87171","#c084fc","#fb923c","#22d3ee","#a3a3a3"];
 
   const load = async () => {
     setError("");
@@ -30,7 +30,7 @@ export function AnalyticsDashboard() {
   useEffect(() => { load(); }, []);
 
   const kpis = [
-    { icon: TrendingUp, label: "已注册工具", value: stats.registry?.total || 8, color: "#6c8cff" },
+    { icon: TrendingUp, label: "已注册工具", value: stats.registry?.total || 8, color: "#d4d4d8" },
     { icon: Zap, label: "工具调用", value: stats.registry?.total_calls || 0, color: "#c084fc" },
     { icon: Wrench, label: "工具集", value: Object.keys(stats.registry?.toolsets || {}).length || 3, color: "#22d3ee" },
     { icon: MessageSquare, label: "市场工具", value: stats.marketplace?.market_size || 2, color: "#fb923c" },

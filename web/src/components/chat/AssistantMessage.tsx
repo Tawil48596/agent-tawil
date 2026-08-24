@@ -11,8 +11,8 @@ export function AssistantMessage({ message, content }: { message?: Message; cont
   const parts = text.split(/(```\w*\n[\s\S]*?```)/g);
 
   return (
-    <div className="flex justify-start">
-      <div className="max-w-[80%] px-4 py-3 rounded-xl text-sm border border-[#2a2d3a] bg-[#0f1117]">
+    <div className="mx-auto flex w-full max-w-3xl justify-start">
+      <div className="min-w-0 w-full px-1 py-2 text-sm leading-6 text-[#e4e4e7]">
         {parts.map((part, i) => {
           if (part.startsWith("```")) {
             const lines = part.split("\n");

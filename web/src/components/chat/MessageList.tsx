@@ -19,19 +19,19 @@ export function MessageList({ onSuggestion }: { onSuggestion: (text: string) => 
   }, [messages, streamContent]);
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-8 space-y-5 bg-[radial-gradient(circle_at_45%_-10%,rgba(108,140,255,.16),transparent_34%)]">
+    <div className="flex-1 space-y-6 overflow-y-auto bg-[radial-gradient(circle_at_50%_-12%,rgba(255,255,255,.045),transparent_34rem)] px-4 py-8 sm:px-6">
       {messages.length === 0 && !streaming && (
-        <div className="mt-[clamp(3rem,10vh,7rem)] max-w-2xl mx-auto text-center">
-          <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-2xl border border-[#8aa7ff]/25 bg-[#6c8cff]/10 text-2xl text-[#b8c5ff] shadow-xl shadow-[#6c8cff]/10">✦</div>
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">今天想让 Agent 完成什么？</h1>
-          <p className="text-sm text-[#9ca9c9] mt-3 leading-6">从具体目标开始。Agent 可以调用工具、检索知识，并在中断后继续工作。</p>
+        <div className="mx-auto mt-[clamp(3rem,10vh,7rem)] max-w-2xl text-center">
+          <div className="mx-auto mb-5 grid h-12 w-12 place-items-center rounded-xl border border-white/10 bg-[#1b1b1b] text-xl text-[#d4d4d8] shadow-xl shadow-black/20">✦</div>
+          <h1 className="text-2xl font-medium tracking-[-0.025em] text-[#f4f4f5] sm:text-3xl">今天想让 Agent 完成什么？</h1>
+          <p className="mt-3 text-sm leading-6 text-[#a3a3a3]">从具体目标开始。Agent 可以调用工具、检索知识，并在中断后继续工作。</p>
           <div className="mt-7 grid gap-2 text-left sm:grid-cols-3">
             {STARTERS.map((starter) => (
               <button
                 type="button"
                 key={starter}
                 onClick={() => onSuggestion(starter)}
-                className="min-h-20 rounded-xl border border-white/10 bg-[#121a2d]/65 p-3 text-left text-xs leading-5 text-[#bdc9e8] transition hover:-translate-y-0.5 hover:border-[#8aa7ff]/35 hover:bg-[#18233b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8aa7ff] motion-reduce:transform-none"
+                className="min-h-20 rounded-xl border border-white/[0.08] bg-[#151515]/80 p-3 text-left text-xs leading-5 text-[#c4c4c8] transition hover:-translate-y-0.5 hover:border-white/20 hover:bg-[#1b1b1b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 motion-reduce:transform-none"
               >
                 {starter}
               </button>
@@ -46,8 +46,8 @@ export function MessageList({ onSuggestion }: { onSuggestion: (text: string) => 
       )}
       {streaming && (
         <div className="flex justify-start" role="status" aria-live="polite">
-          <div className="max-w-[80%] px-4 py-3 rounded-xl text-sm border border-[#2a2d3a]">
-            {streamContent ? <AssistantMessage content={streamContent} /> : <span className="text-[#8b8fa3] animate-pulse">思考中...</span>}
+          <div className="w-full max-w-3xl px-1 py-3 text-sm">
+            {streamContent ? <AssistantMessage content={streamContent} /> : <span className="animate-pulse text-[#737373]">思考中...</span>}
           </div>
         </div>
       )}

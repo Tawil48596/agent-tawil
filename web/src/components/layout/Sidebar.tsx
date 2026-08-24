@@ -55,17 +55,17 @@ export function Sidebar() {
   };
 
   return (
-    <aside aria-label="主导航" className="h-full w-[17.5rem] bg-[#101729]/95 border-r border-white/10 flex flex-col shrink-0 backdrop-blur-xl">
-      <div className="p-5 border-b border-white/10">
+    <aside aria-label="主导航" className="flex h-full w-[16.5rem] shrink-0 flex-col border-r border-white/[0.07] bg-[#111111]/95 backdrop-blur-xl">
+      <div className="px-4 pb-3 pt-4">
         <div className="flex items-center gap-2">
           <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => goTo("/")}>
-            <span className="h-9 w-9 rounded-xl bg-gradient-to-br from-[#8aa7ff] to-[#7b5cff] flex items-center justify-center shadow-lg shadow-[#6c8cff]/20">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-[#242424] text-[#e4e4e7] shadow-sm">
               <Sparkles size={17} aria-hidden="true" />
             </span>
             <span className="leading-tight">
-              <span className="block text-sm font-semibold tracking-tight">Agent Studio</span>
-              <span className="mt-0.5 block text-[10px] text-[#9ca9c9]">
-                AI workspace · v{APP_VERSION}
+              <span className="block text-sm font-medium tracking-tight">Agent Studio</span>
+              <span className="mt-0.5 block text-[10px] text-[#737373]">
+                Local workspace · v{APP_VERSION}
               </span>
             </span>
           </button>
@@ -73,7 +73,7 @@ export function Sidebar() {
             type="button"
             aria-label="关闭导航"
             onClick={() => setSidebarOpen(false)}
-            className="ml-auto grid h-9 w-9 place-items-center rounded-lg text-[#8f9dbc] hover:bg-white/5 hover:text-white lg:hidden"
+            className="ml-auto grid h-9 w-9 place-items-center rounded-lg text-[#a3a3a3] hover:bg-white/[0.06] hover:text-white lg:hidden"
           >
             <X size={17} aria-hidden="true" />
           </button>
@@ -85,12 +85,12 @@ export function Sidebar() {
           const id = await createSession();
           goTo(`/chat/${id}`);
         }}
-        className="mx-4 mt-4 py-3 bg-gradient-to-r from-[#7899ff] to-[#8068ff] hover:brightness-110 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 shadow-lg shadow-[#6c8cff]/20 transition"
+        className="mx-3 mt-2 flex min-h-10 items-center justify-center gap-2 rounded-lg border border-white/10 bg-[#f4f4f5] px-3 text-sm font-medium text-[#171717] shadow-sm transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
       >
         <Plus size={16} /> 新对话
       </button>
 
-      <div className="px-5 pt-5 text-[10px] tracking-[0.16em] text-[#7785a9] font-semibold">
+      <div className="px-5 pt-5 text-[10px] font-medium tracking-[0.14em] text-[#737373]">
         最近对话
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-2">
@@ -98,9 +98,9 @@ export function Sidebar() {
           <div
             key={session.id}
             className={cn(
-              "group mb-1 flex items-center rounded-lg text-sm text-[#9ca9c9] transition hover:bg-white/[0.06] hover:text-white",
+              "group mb-0.5 flex items-center rounded-lg text-sm text-[#a3a3a3] transition hover:bg-white/[0.055] hover:text-white",
               activeId === session.id &&
-                "bg-[#6c8cff]/15 text-white ring-1 ring-[#8aa7ff]/20",
+                "bg-white/[0.08] text-white ring-1 ring-white/[0.06]",
             )}
           >
             <button
@@ -109,7 +109,7 @@ export function Sidebar() {
                 selectSession(session.id);
                 goTo(`/chat/${session.id}`);
               }}
-              className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#8aa7ff]/70"
+              className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/50"
             >
               <MessageSquare size={14} className="shrink-0 opacity-70" />
               <span className="min-w-0 flex-1 truncate">
@@ -120,27 +120,27 @@ export function Sidebar() {
               type="button"
               aria-label={`删除对话 ${session.title || "新对话"}`}
               onClick={(event) => removeSession(event, session.id)}
-              className="mr-2 p-1 text-[#7785a9] opacity-70 transition hover:text-[#f87171] focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+              className="mr-2 rounded p-1 text-[#737373] opacity-70 transition hover:bg-white/[0.06] hover:text-[#f87171] focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
             >
               <Trash2 size={13} />
             </button>
           </div>
         ))}
         {sessions.length === 0 && (
-          <p className="px-3 py-4 text-xs text-[#66718e]">还没有对话</p>
+          <p className="px-3 py-4 text-xs text-[#666666]">还没有对话</p>
         )}
       </div>
 
-      <div className="border-t border-white/10 p-3">
+      <div className="border-t border-white/[0.07] p-3">
         {navItems.map(({ to, icon: Icon, label }) => (
           <button
             type="button"
             key={to}
             onClick={() => goTo(to)}
             className={cn(
-              "flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm text-[#9ca9c9] hover:bg-white/[0.06] hover:text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8aa7ff]/70",
+              "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-[#a3a3a3] transition hover:bg-white/[0.055] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50",
               location.pathname.startsWith(to) &&
-                "text-[#aebdff] bg-[#6c8cff]/10",
+                "bg-white/[0.08] text-white",
             )}
           >
             <Icon size={16} /> {label}

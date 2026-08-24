@@ -90,14 +90,14 @@ export function KnowledgeBase() {
     <div className="p-6 h-full overflow-y-auto">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-semibold flex items-center gap-2"><BookOpen size={20} /> 知识库</h2>
-        <button onClick={createKB} className="bg-[#6c8cff] text-white px-4 py-2 rounded-lg text-sm flex items-center gap-1"><Plus size={16} /> 新建</button>
+        <button onClick={createKB} className="flex items-center gap-1 rounded-lg bg-[#f4f4f5] px-4 py-2 text-sm font-medium text-[#171717] hover:bg-white"><Plus size={16} /> 新建</button>
       </div>
 
       <div className="flex h-[calc(100%-60px)] flex-col gap-4 lg:flex-row">
         <div className="w-full shrink-0 space-y-2 lg:w-64">
           {kbs.map((kb: any) => (
             <div key={kb.id}
-              className={`flex items-center rounded-lg border bg-[#1a1d27] p-2 ${activeKb === kb.id ? "border-[#6c8cff]" : "border-[#2a2d3a]"}`}>
+              className={`flex items-center rounded-lg border bg-[#171717] p-2 ${activeKb === kb.id ? "border-white/30 bg-[#1b1b1b]" : "border-[#303030]"}`}>
               <button type="button" onClick={() => { setActiveKb(kb.id); void loadDocuments(kb.id); setResults([]); }} className="min-w-0 flex-1 p-1 text-left">
                 <span className="block text-sm font-medium">{kb.name}</span>
                 <span className="block truncate text-xs text-[#8b8fa3]">{kb.description || "无描述"}</span>
@@ -117,7 +117,7 @@ export function KnowledgeBase() {
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleDrop}
                 className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer ${
-                  dragOver ? "border-[#6c8cff] bg-[#1e2030]" : "border-[#2a2d3a] hover:border-[#8b8fa3]"
+                  dragOver ? "border-white/30 bg-[#1b1b1b]" : "border-[#303030] hover:border-white/20"
                 }`}
               >
                 <input id="knowledge-upload" type="file" multiple className="hidden"
@@ -156,8 +156,8 @@ export function KnowledgeBase() {
                 <h3 className="text-sm font-medium mb-2">检索测试</h3>
                 <div className="flex gap-2">
                   <input aria-label="知识库检索词" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && searchKB()}
-                    placeholder="输入查询..." className="flex-1 bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#6c8cff]" />
-                  <button type="button" aria-label="检索知识库" onClick={searchKB} className="bg-[#6c8cff] text-white px-4 py-2 rounded-lg text-sm"><Search size={16} aria-hidden="true" /></button>
+                    placeholder="输入查询..." className="flex-1 rounded-lg border border-[#303030] bg-[#0d0d0d] px-3 py-2 text-sm outline-none focus:border-white/30" />
+                  <button type="button" aria-label="检索知识库" onClick={searchKB} className="rounded-lg bg-[#f4f4f5] px-4 py-2 text-sm text-[#171717] hover:bg-white"><Search size={16} aria-hidden="true" /></button>
                 </div>
                 {status && <p className="text-xs text-[#8b8fa3] mt-2">{status}</p>}
                 {results.map((r: any, i: number) => (

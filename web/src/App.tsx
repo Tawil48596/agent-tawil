@@ -22,13 +22,13 @@ export default function App() {
   useEffect(() => { void init(); }, [init]);
 
   return (
-    <div className="app-shell h-[100dvh] flex text-[#edf1ff] overflow-hidden">
+    <div className="app-shell h-[100dvh] flex overflow-hidden text-[#f4f4f5]">
       <button
         type="button"
         aria-label="打开导航"
         aria-expanded={sidebarOpen}
         onClick={toggleSidebar}
-        className="fixed left-3 top-3 z-40 grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-[#121a2d]/90 text-[#dce5ff] shadow-lg backdrop-blur-xl transition hover:bg-[#1b2742] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8aa7ff] lg:hidden"
+        className="fixed left-3 top-3 z-40 grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-[#1b1b1b]/95 text-[#e4e4e7] shadow-xl backdrop-blur-xl transition hover:bg-[#252525] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 lg:hidden"
       >
         <Menu size={19} aria-hidden="true" />
       </button>
@@ -40,7 +40,7 @@ export default function App() {
           type="button"
           aria-label="关闭导航"
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 z-40 bg-[#050814]/70 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm lg:hidden"
         />
       )}
       <main className="flex-1 flex flex-col min-w-0 min-h-0">

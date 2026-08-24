@@ -111,7 +111,7 @@ export function Settings() {
         ].map(({ id, icon: Icon, label }) => (
           <button key={id} onClick={() => setTab(id)}
             className={`px-4 py-2 rounded-lg text-sm flex items-center gap-2 ${
-              tab === id ? "bg-[#6c8cff] text-white" : "bg-[#1a1d27] text-[#8b8fa3] border border-[#2a2d3a]"
+              tab === id ? "bg-[#f4f4f5] text-[#171717]" : "border border-[#303030] bg-[#171717] text-[#a1a1aa] hover:bg-[#1b1b1b]"
             }`}>{<Icon size={16} />} {label}</button>
         ))}
       </div>
@@ -167,7 +167,7 @@ export function Settings() {
                   value={getEditVal(p.name, "url")}
                   onChange={(e) => setEditVal(p.name, "url", e.target.value)}
                   placeholder="https://api.openai.com/v1"
-                  className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-4 py-2.5 text-sm text-[#e1e4ea] outline-none focus:border-[#6c8cff] mb-3"
+                  className="mb-3 w-full rounded-lg border border-[#303030] bg-[#0d0d0d] px-4 py-2.5 text-sm text-[#e4e4e7] outline-none focus:border-white/30"
                 />
 
                 {/* API Key */}
@@ -180,7 +180,7 @@ export function Settings() {
                       value={getEditVal(p.name, "key")}
                       onChange={(e) => setEditVal(p.name, "key", e.target.value)}
                       placeholder="sk-..."
-                      className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg pl-4 pr-10 py-2.5 text-sm text-[#e1e4ea] outline-none focus:border-[#6c8cff]"
+                      className="w-full rounded-lg border border-[#303030] bg-[#0d0d0d] py-2.5 pl-4 pr-10 text-sm text-[#e4e4e7] outline-none focus:border-white/30"
                     />
                     <button type="button" aria-label={`${showKeys[p.name] ? "隐藏" : "显示"} ${p.name} API Key`} onClick={() => setShowKeys(prev => ({ ...prev, [p.name]: !prev[p.name] }))}
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8b8fa3]">
@@ -188,7 +188,7 @@ export function Settings() {
                     </button>
                   </div>
                   <button onClick={() => saveProvider(p.name)}
-                    className="bg-[#6c8cff] text-white px-4 py-2 rounded-lg text-sm hover:opacity-90 flex items-center gap-1">
+                    className="flex items-center gap-1 rounded-lg bg-[#f4f4f5] px-4 py-2 text-sm font-medium text-[#171717] hover:bg-white">
                     <Save size={16} /> 保存
                   </button>
                 </div>
