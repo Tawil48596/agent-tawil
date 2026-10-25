@@ -11,7 +11,7 @@ keywords = ["ai", "agent", "llm", "rag", "mcp", "multi-agent"]
 dependencies = [
     # Web Framework
     "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.30.0",
+    "uvicorn[standard]>=0.52.4",
     "sse-starlette>=2.0.0",
 
     # LLM
